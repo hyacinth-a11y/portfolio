@@ -223,3 +223,23 @@ h3, h4 { color: var(--text); }
 .toolbar-rt .tb:hover { background: var(--hover); }
 .toolbar-rt .tb.on { background: var(--chip); color: var(--navy-700); }
 .toolbar-rt .sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
+
+/* parent / child pickers */
+.parent-ctl { position: relative; }
+.parent-btn { padding: 2px 8px; font-size: 12px; color: var(--muted); }
+.parent-pop { position: absolute; top: 28px; left: 0; z-index: 20; width: 420px; max-width: 80vw; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(9,30,66,.2); padding: 10px; }
+.pop-title { margin-bottom: 6px; }
+.remove-parent { margin-top: 8px; }
+.picker { position: relative; flex: 1; }
+.picker-list { margin-top: 4px; border: 1px solid var(--border); border-radius: 4px; max-height: 280px; overflow-y: auto; background: var(--panel); }
+.child-add .picker-list { position: absolute; left: 0; right: 0; z-index: 15; box-shadow: 0 8px 24px rgba(9,30,66,.15); }
+.picker-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; }
+.picker-row.active { background: var(--chip); }
+.picker-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker-empty { padding: 8px 10px; }
+.seg { display: flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.seg button { background: transparent; border-radius: 0; font-size: 12px; padding: 4px 10px; color: var(--muted); }
+.seg button.on { background: var(--chip); color: var(--navy-700); font-weight: 600; }
+.unlink { opacity: 0; color: var(--muted); padding: 0 4px; }
+.child-row:hover .unlink { opacity: 1; }
+.children { overflow: visible; } .child-add { position: relative; }

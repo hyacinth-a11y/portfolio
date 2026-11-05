@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, newId } from './api.js'
 import FieldInput from './FieldInput.jsx'
+import TicketPicker from './TicketPicker.jsx'
 import { RichEditor, RichView } from './RichText.jsx'
 import { ticketKey, WORK_TYPES, typeOf, levelOf, descendants } from './format.js'
 
@@ -23,6 +24,10 @@ export default function TicketModal({ ticket, tickets, onOpen, statuses, fields,
   const children = tickets.filter(t => t.parent_id === ticket.id).sort((a, b) => (a.number || 0) - (b.number || 0))
   const lowerTypes = WORK_TYPES.filter(w => w.level > wt.level)
   const [childType, setChildType] = useState(null)
+  const [parentPicker, setParentPicker] = useState(false)
+  const [childMode, setChildMode] = useState('create') // create | existing
+  useEffect(() => { setParentPicker(false); setChildMode('create') }, [ticket.id])
+  const childCandidates = tickets.filter(t => t.id !== ticket.id && t.parent_id !== ticket.id && levelOf(t) > wt.level)
   const chosenChildType = lowerTypes.find(w => w.value === childType) || lowerTypes[0]
   // breadcrumb: parent chain
   const chain = []
@@ -104,6 +109,24 @@ export default function TicketModal({ ticket, tickets, onOpen, statuses, fields,
             {chain.map(p => <span key={p.id}><button className="link small" onClick={() => onOpen(p.id)}>
               <span style={{ color: typeOf(p).color }}>{typeOf(p).icon}</span> {ticketKey(p)}</button> <span className="muted">/</span> </span>)}
             <span className="key"><span style={{ color: wt.color }}>{wt.icon}</span> {ticketKey(ticket)}</span>
+            {wt.level > 0 && (
+              <span className="parent-ctl">
+                <button className="ghost small parent-btn" onClick={() => setParentPicker(v => !v)}>
+                  {ticket.parent_id ? '✎ Change parent' : '+ Add parent'}
+                </button>
+                {parentPicker && (
+                  <div className="parent-pop">
+                    <div className="muted small pop-title">
+                      Choose a parent ({WORK_TYPES.filter(w => w.level < wt.level).map(w => w.label).join(' or ')})
+                    </div>
+                    <TicketPicker candidates={parentOptions} onClose={() => setParentPicker(false)}
+                      onPick={p => { upd({ parent_id: p.id }); setParentPicker(false) }} />
+                    {ticket.parent_id && <button className="link small danger remove-parent"
+                      onClick={() => { upd({ parent_id: null }); setParentPicker(false) }}>Remove parent</button>}
+                  </div>
+                )}
+              </span>
+            )}
           </div>
           <div className="row">
             <button className="ghost danger" onClick={async () => {
@@ -131,7 +154,13 @@ export default function TicketModal({ ticket, tickets, onOpen, statuses, fields,
             )}
 
             {lowerTypes.length > 0 && <>
-              <h4>Child items <span className="muted small">{children.length || ''}</span></h4>
+              <div className="section-head">
+                <h4>Child items <span className="muted small">{children.length || ''}</span></h4>
+                <div className="seg">
+                  <button className={childMode === 'create' ? 'on' : ''} onClick={() => setChildMode('create')}>+ Create new</button>
+                  <button className={childMode === 'existing' ? 'on' : ''} onClick={() => setChildMode('existing')}>⤷ Add existing</button>
+                </div>
+              </div>
               <div className="children">
                 {children.map(c => (
                   <div key={c.id} className="child-row" onClick={() => onOpen(c.id)}>
@@ -139,8 +168,18 @@ export default function TicketModal({ ticket, tickets, onOpen, statuses, fields,
                     <span className="key">{ticketKey(c)}</span>
                     <span className="child-title">{c.title}</span>
                     <span className="pill status-pill">{statusName(c.status_id)}</span>
+                    <button className="link small unlink" title="Remove from this parent"
+                      onClick={e => { e.stopPropagation(); actions.updateTicket(c.id, { parent_id: null }) }}>✕</button>
                   </div>
                 ))}
+                {childMode === 'existing' ? (
+                  <div className="child-add">
+                    <TicketPicker candidates={childCandidates} autoFocus
+                      placeholder={`Search ${lowerTypes.map(w => w.label).join(' / ')} by key or name to add it here…`}
+                      note={t => t.parent_id && byId[t.parent_id] ? `under ${ticketKey(byId[t.parent_id])}` : ''}
+                      onPick={c => actions.updateTicket(c.id, { parent_id: ticket.id })} />
+                  </div>
+                ) : (
                 <form className="child-add" onSubmit={addChild}>
                   {lowerTypes.length > 1 && <select value={chosenChildType.value} onChange={e => setChildType(e.target.value)}>
                     {lowerTypes.map(w => <option key={w.value} value={w.value}>{w.icon} {w.label}</option>)}
@@ -148,6 +187,7 @@ export default function TicketModal({ ticket, tickets, onOpen, statuses, fields,
                   <input placeholder={`+ Add a ${chosenChildType.label.toLowerCase()}`} value={childTitle} onChange={e => setChildTitle(e.target.value)} />
                   {childTitle.trim() && <button className="primary" type="submit">Add</button>}
                 </form>
+                )}
               </div>
             </>}
 
