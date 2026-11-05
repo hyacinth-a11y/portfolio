@@ -192,3 +192,34 @@ h3, h4 { color: var(--text); }
 .column.collapsed .col-head { flex-direction: column; gap: 10px; padding: 6px 0; height: auto; }
 .column.collapsed .col-name { writing-mode: vertical-rl; white-space: nowrap; overflow: visible; }
 .column.collapsed.over { background: var(--chip); }
+
+/* rich text */
+.desc .rich { cursor: text; }
+.rich .tiptap { outline: none; word-break: break-word; }
+.rich .tiptap > *:first-child { margin-top: 0; }
+.rich .tiptap p { margin: 0 0 6px; }
+.rich .tiptap h2 { font-size: 20px; margin: 14px 0 6px; } .rich .tiptap h3 { font-size: 17px; margin: 12px 0 6px; } .rich .tiptap h4 { font-size: 15px; margin: 10px 0 4px; }
+.rich .tiptap ul, .rich .tiptap ol { padding-left: 24px; margin: 4px 0 8px; }
+.rich .tiptap li p { margin: 0 0 2px; }
+.rich .tiptap ul[data-type=taskList] { list-style: none; padding-left: 4px; }
+.rich .tiptap ul[data-type=taskList] li { display: flex; gap: 8px; align-items: flex-start; }
+.rich .tiptap ul[data-type=taskList] li > label { margin-top: 3px; }
+.rich .tiptap ul[data-type=taskList] li > div { flex: 1; }
+.rich .tiptap ul[data-type=taskList] li[data-checked=true] > div { text-decoration: line-through; color: var(--muted); }
+.rich .tiptap blockquote { border-left: 3px solid var(--border); margin: 6px 0; padding: 2px 12px; color: var(--muted); }
+.rich .tiptap hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+.rich .tiptap code { background: var(--hover); padding: 1px 4px; border-radius: 3px; font-size: 13px; }
+.rich .tiptap pre { background: #f4f5f7; padding: 10px 12px; border-radius: 4px; overflow-x: auto; }
+.rich .tiptap pre code { background: none; padding: 0; }
+.rich .tiptap a { color: var(--link); word-break: break-all; }
+.rich .tiptap p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--muted); float: left; height: 0; pointer-events: none; }
+.rich-edit { border: 1px solid var(--border); border-radius: 6px; }
+.rich-edit:focus-within { border-color: var(--navy-300); box-shadow: 0 0 0 1px var(--navy-300); }
+.rich-edit .row { padding: 0 10px 10px; }
+.rich.editable .tiptap { min-height: 140px; padding: 10px 12px; }
+.toolbar-rt { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; padding: 4px 6px; border-bottom: 1px solid var(--border); background: #fafbfc; border-radius: 6px 6px 0 0; }
+.toolbar-rt select { width: auto; padding: 3px 6px; font-size: 13px; border-color: transparent; background: transparent; }
+.toolbar-rt .tb { background: transparent; padding: 3px 8px; min-width: 30px; font-size: 13px; color: var(--text); }
+.toolbar-rt .tb:hover { background: var(--hover); }
+.toolbar-rt .tb.on { background: var(--chip); color: var(--navy-700); }
+.toolbar-rt .sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }

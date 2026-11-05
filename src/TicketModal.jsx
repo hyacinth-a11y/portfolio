@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, newId } from './api.js'
 import FieldInput from './FieldInput.jsx'
+import { RichEditor, RichView } from './RichText.jsx'
 import { ticketKey, WORK_TYPES, typeOf, levelOf, descendants } from './format.js'
 
 // Renders plain text with [text](url) links, **bold** and bare URLs.
@@ -50,19 +51,18 @@ export default function TicketModal({ ticket, tickets, onOpen, statuses, fields,
   }
 
   const [title, setTitle] = useState(ticket.title)
-  const [desc, setDesc] = useState(ticket.description || '')
   const [editDesc, setEditDesc] = useState(false)
   const [comments, setComments] = useState(null)
   const [newComment, setNewComment] = useState('')
 
-  useEffect(() => { setTitle(ticket.title); setDesc(ticket.description || '') }, [ticket.id])
+  useEffect(() => { setTitle(ticket.title); setEditDesc(false) }, [ticket.id])
   useEffect(() => {
     api.listBy('comments', 'ticket_id', ticket.id)
       .then(c => setComments(c.sort((a, b) => a.created_at.localeCompare(b.created_at))))
       .catch(e => actions.setError(e.message))
   }, [ticket.id])
   useEffect(() => {
-    const k = e => { if (e.key === 'Escape' && !document.activeElement?.matches('input,textarea')) onClose() }
+    const k = e => { if (e.key === 'Escape' && !document.activeElement?.matches('input,textarea,select,[contenteditable=true]')) onClose() }
     window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
   }, [onClose])
 
@@ -120,16 +120,13 @@ export default function TicketModal({ ticket, tickets, onOpen, statuses, fields,
 
             <h4>Description</h4>
             {editDesc ? (
-              <div>
-                <textarea autoFocus rows={8} value={desc} onChange={e => setDesc(e.target.value)} />
-                <div className="row">
-                  <button className="primary" onClick={() => { upd({ description: desc }); setEditDesc(false) }}>Save</button>
-                  <button className="ghost" onClick={() => { setDesc(ticket.description || ''); setEditDesc(false) }}>Cancel</button>
-                </div>
-              </div>
+              <RichEditor html={ticket.description || ''}
+                onSave={html => { upd({ description: html }); setEditDesc(false) }}
+                onCancel={() => setEditDesc(false)} />
             ) : (
-              <div className={'desc' + (ticket.description ? '' : ' empty')} onClick={e => { if (e.target.tagName !== 'A') setEditDesc(true) }}>
-                {ticket.description ? <Linkify text={ticket.description} /> : 'Add a description…'}
+              <div className={'desc' + (ticket.description ? '' : ' empty')} title="Click to edit"
+                onClick={e => { if (!e.target.closest('a') && !e.target.closest('input')) setEditDesc(true) }}>
+                {ticket.description ? <RichView html={ticket.description} /> : 'Add a description…'}
               </div>
             )}
 

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Papa from 'papaparse'
 import { api, FIELD_TYPES, COLORS } from './api.js'
 import { displayValue, ticketKey, typeOf } from './format.js'
+import { htmlToText } from './RichText.jsx'
 
 export default function Settings({ settings, statuses, fields, templates, tickets, actions }) {
   const [tab, setTab] = useState('general')
@@ -174,7 +175,7 @@ function Export({ statuses, fields, tickets }) {
         ...Array.from({ length: maxC }, () => 'Comment')]
       const rows = [...tickets].sort((a, b) => (a.number || 0) - (b.number || 0)).map(t => {
         const cs = comments.filter(c => c.ticket_id === t.id).sort((a, b) => a.created_at.localeCompare(b.created_at))
-        return [ticketKey(t), typeOf(t).label, byId[t.parent_id] ? ticketKey(byId[t.parent_id]) : '', t.title, t.description, st[t.status_id] || '', t.created_at,
+        return [ticketKey(t), typeOf(t).label, byId[t.parent_id] ? ticketKey(byId[t.parent_id]) : '', t.title, htmlToText(t.description), st[t.status_id] || '', t.created_at,
           ...fields.map(f => f.type === 'multiselect' ? (t.custom?.[f.id] || []).join(', ') : f.type === 'checkbox' ? String(!!t.custom?.[f.id]) : (t.custom?.[f.id] ?? '')),
           (t.checklists || []).map(l => l.title + ': ' + l.items.map(i => (i.done ? '[x] ' : '[ ] ') + i.text).join('; ')).join(' | '),
           ...Array.from({ length: maxC }, (_, i) => cs[i] ? `${cs[i].created_at};${cs[i].author || ''};${cs[i].body}` : '')]

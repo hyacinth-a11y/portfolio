@@ -43,7 +43,7 @@ export function checklistProgress(t) {
 export function matches(t, q, fields) {
   if (!q) return true
   q = q.toLowerCase()
-  const hay = [t.title, t.description, ticketKey(t),
+  const hay = [t.title, String(t.description || '').replace(/<[^>]+>/g, ' '), ticketKey(t),
     ...fields.map(f => displayValue(f, t.custom?.[f.id]))].join(' ').toLowerCase()
   return hay.includes(q)
 }

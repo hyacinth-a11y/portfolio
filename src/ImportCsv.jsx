@@ -3,6 +3,7 @@ import Papa from 'papaparse'
 import { api, newId, FIELD_TYPES, COLORS } from './api.js'
 import { suggest, convert, parseComment, parseDate, jiraToText } from './jira.js'
 import { mapWorkType, WORK_TYPES, levelOf } from './format.js'
+import { textToHtml } from './RichText.jsx'
 
 export default function ImportCsv({ statuses, fields, tickets: existing = [], settings, actions, onDone }) {
   const [rows, setRows] = useState(null)        // data rows (arrays)
@@ -146,7 +147,7 @@ export default function ImportCsv({ statuses, fields, tickets: existing = [], se
           else if (g.map.kind === 'jira_id') { if (cells[0]) t.jira_id = String(cells[0]).trim() }
           else if (g.map.kind === 'parent_key') { if (cells[0]) t._parentKey = String(cells[0]).trim().toUpperCase() }
           else if (g.map.kind === 'parent_id') { if (cells[0]) t._parentJira = String(cells[0]).trim() }
-          else if (g.map.kind === 'description') t.description = cells.filter(Boolean).map(jiraToText).join('\n\n')
+          else if (g.map.kind === 'description') t.description = textToHtml(cells.filter(Boolean).map(jiraToText).join('\n\n'))
           else if (g.map.kind === 'created') { const d = parseDate(cells[0]); if (d) t.created_at = d.toISOString() }
           else if (g.map.kind === 'checklist') {
             const ticked = new Set(cells.map(c => String(c ?? '').trim()).filter(Boolean))
