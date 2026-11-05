@@ -7,6 +7,15 @@ export default function Board({ statuses, fields, tickets, actions, onOpen }) {
   const [dragId, setDragId] = useState(null)
   const [over, setOver] = useState(null) // {status, beforeId}
   const [dragCol, setDragCol] = useState(null)
+  // collapsed columns are remembered in this browser
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('pb-collapsed') || '[]')) } catch { return new Set() }
+  })
+  const toggleCol = id => setCollapsed(prev => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id)
+    try { localStorage.setItem('pb-collapsed', JSON.stringify([...next])) } catch {}
+    return next
+  })
   const [colOver, setColOver] = useState(null) // {id, side: 'left'|'right'}
 
   async function dropCol() {
@@ -81,9 +90,11 @@ export default function Board({ statuses, fields, tickets, actions, onOpen }) {
       <div className="board">
         {statuses.map(s => {
           const list = colTickets(s.id)
+          const isCollapsed = collapsed.has(s.id)
           return (
             <section key={s.id}
-              className={'column' + (!dragCol && over?.status === s.id ? ' over' : '') + (dragCol === s.id ? ' col-dragging' : '') +
+              onClick={isCollapsed ? () => toggleCol(s.id) : undefined}
+              className={'column' + (isCollapsed ? ' collapsed' : '') + (!dragCol && over?.status === s.id ? ' over' : '') + (dragCol === s.id ? ' col-dragging' : '') +
                 (dragCol && colOver?.id === s.id && dragCol !== s.id ? ' col-drop-' + colOver.side : '')}
               onDragOver={e => {
                 e.preventDefault()
@@ -99,11 +110,16 @@ export default function Board({ statuses, fields, tickets, actions, onOpen }) {
               <header className="col-head" draggable title="Drag to reorder columns"
                 onDragStart={e => { setDragCol(s.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', 'col:' + s.id) }}
                 onDragEnd={() => { setDragCol(null); setColOver(null) }}>
-                <span className="grip" aria-hidden>⋮⋮</span>
+                <button className="collapse-btn" title={isCollapsed ? 'Expand column' : 'Collapse column'}
+                  onClick={e => { e.stopPropagation(); toggleCol(s.id) }} onMouseDown={e => e.stopPropagation()}>
+                  {isCollapsed ? '›' : '‹'}
+                </button>
+                {!isCollapsed && <span className="grip" aria-hidden>⋮⋮</span>}
                 <span className="dot" style={{ background: s.color }} />
                 <span className="col-name">{s.name}</span>
                 <span className="count">{list.length}</span>
               </header>
+              {!isCollapsed && <>
               <div className="cards">
                 {list.map(t => {
                   const prog = checklistProgress(t)
@@ -149,6 +165,7 @@ export default function Board({ statuses, fields, tickets, actions, onOpen }) {
               ) : (
                 <button className="add-card" onClick={() => { setAdding(s.id); setNewTitle('') }}>+ Create</button>
               )}
+              </>}
             </section>
           )
         })}

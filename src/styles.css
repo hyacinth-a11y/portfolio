@@ -1,24 +1,13 @@
 :root {
-  /* nClouds brand palette */
+  /* White, Jira-like base. nClouds colors are accents only. */
   --navy-900: #183449; --navy-700: #1f4560; --navy-500: #2d5a7b; --navy-300: #6f93ad;
-  --orange: #e8922e; --orange-h: #d17d1b; --sky: #8ec5d6; --sky-50: #e8f3f7;
+  --orange: #e8922e; --sky: #8ec5d6;
 
-  --bg: #f4f7f9; --panel: #ffffff; --col: #e9eff3; --text: #183449; --muted: #5b7083;
-  --border: #d4dee5; --primary: #1f4560; --primary-h: #183449; --accent: #e8922e; --danger: #c0392b;
-  --hover: #e3ebf0; --shadow: 0 1px 2px rgba(24,52,73,.18), 0 0 1px rgba(24,52,73,.25);
-  --chip: #e8f3f7; --chip-text: #1f4560; --link: #2d5a7b;
-  --topbar: linear-gradient(90deg, #183449 0%, #2d5a7b 100%);
+  --bg: #ffffff; --panel: #ffffff; --col: #f7f8f9; --text: #172b4d; --muted: #626f86;
+  --border: #dfe1e6; --primary: #1f4560; --primary-h: #183449; --accent: #e8922e; --danger: #c9372c;
+  --hover: #f1f2f4; --shadow: 0 1px 1px rgba(9,30,66,.25), 0 0 1px rgba(9,30,66,.31);
+  --chip: #eaf4f8; --chip-text: #1f4560; --link: #1f6fa3;
   color-scheme: light;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #12222f; --panel: #1a2f40; --col: #0f1d28; --text: #e6eef3; --muted: #9db3c4;
-    --border: #2c4659; --primary: #e8922e; --primary-h: #f0a64f; --accent: #e8922e; --danger: #f07a6e;
-    --hover: #24405a; --shadow: 0 1px 2px rgba(0,0,0,.45), 0 0 1px rgba(0,0,0,.5);
-    --chip: #1f3b50; --chip-text: #8ec5d6; --link: #8ec5d6;
-    --topbar: linear-gradient(90deg, #0f1f2c 0%, #1f4560 100%);
-    color-scheme: dark;
-  }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
@@ -56,18 +45,16 @@ code { background: var(--hover); padding: 1px 4px; border-radius: 3px; }
 .login label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
 
 .app { display: flex; flex-direction: column; height: 100%; }
-.topbar { display: flex; align-items: center; gap: 16px; padding: 10px 20px; background: var(--topbar); color: #fff; border-bottom: 3px solid var(--accent); flex-wrap: wrap; }
-.brand { font-weight: 700; font-size: 17px; display: flex; align-items: center; gap: 8px; letter-spacing: -.2px; }
+.topbar { display: flex; align-items: center; gap: 16px; padding: 8px 20px; background: #fff; color: var(--text); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.brand { color: var(--navy-900); font-weight: 700; font-size: 17px; display: flex; align-items: center; gap: 8px; letter-spacing: -.2px; }
 .brand-mark { width: 26px; height: 26px; border-radius: 6px; background: var(--accent); display: grid; place-items: center; color: #fff; font-size: 15px; }
 .topbar nav, .subtabs { display: flex; gap: 2px; }
 .tab { background: transparent; color: var(--muted); font-weight: 500; }
-.tab.on { color: var(--primary); background: var(--chip); }
-.topbar .tab { color: rgba(255,255,255,.75); }
-.topbar .tab:hover { background: rgba(255,255,255,.1); color: #fff; }
-.topbar .tab.on { color: #fff; background: rgba(255,255,255,.14); box-shadow: inset 0 -2px 0 var(--accent); }
-.topbar .muted { color: rgba(255,255,255,.75); }
-.topbar button.ghost { color: #fff; }
-.topbar button.ghost:hover { background: rgba(255,255,255,.12); }
+.tab.on { color: var(--navy-700); background: var(--chip); }
+.topbar .tab { color: var(--muted); padding: 10px 12px; margin: -8px 0; border-radius: 0; }
+.topbar .tab:hover { background: var(--hover); color: var(--text); }
+.topbar .tab.on { color: var(--navy-700); background: transparent; box-shadow: inset 0 -3px 0 var(--accent); }
+
 .login h1 .brand-mark { display: inline-grid; margin-right: 8px; vertical-align: -4px; }
 .login { border-top: 4px solid var(--accent); }
 .topbar .right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
@@ -197,3 +184,11 @@ h3, h4 { color: var(--text); }
 .column.col-dragging { opacity: .45; }
 .column.col-drop-left { box-shadow: -4px 0 0 var(--accent); }
 .column.col-drop-right { box-shadow: 4px 0 0 var(--accent); }
+
+/* collapsible columns */
+.collapse-btn { background: transparent; padding: 0 4px; color: var(--muted); font-size: 16px; line-height: 1; }
+.collapse-btn:hover { background: var(--border); color: var(--text); }
+.column.collapsed { width: 44px; min-width: 44px; padding: 6px 4px; cursor: pointer; }
+.column.collapsed .col-head { flex-direction: column; gap: 10px; padding: 6px 0; height: auto; }
+.column.collapsed .col-name { writing-mode: vertical-rl; white-space: nowrap; overflow: visible; }
+.column.collapsed.over { background: var(--chip); }
