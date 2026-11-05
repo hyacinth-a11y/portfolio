@@ -1,0 +1,6 @@
+Summary,Issue key,Issue id,Issue Type,Status,Priority,Assignee,Created,Due date,Description,Labels,Labels,Custom field (Repo Link),Comment,Comment
+Acme Corp - EKS migration,ONB-1,10001,Task,In Progress,High,Cinth,02/Oct/26 9:15 AM,15/Dec/26 12:00 AM,"Migrate Acme workloads to EKS.
+Runbook: https://wiki.example.com/acme",aws,eks,https://github.com/example/acme-eks,"03/Oct/26 10:00 AM;557058:a1b2c3d4;Kickoff done, waiting on IAM access","10/Oct/26 2:30 PM;557058:a1b2c3d4;Access granted"
+Globex - Landing zone,ONB-2,10002,Task,To Do,Medium,Cinth,05/Oct/26 11:00 AM,,Control Tower setup,aws,landing-zone,https://github.com/example/globex-lz,,
+Initech - Cost review,ONB-3,10003,Task,Blocked,Low,,12/Oct/26 4:45 PM,30/Nov/26 12:00 AM,FinOps review of current spend,finops,,,"13/Oct/26 9:00 AM;557058:a1b2c3d4;Need CUR export",
+Umbrella - DR plan,ONB-4,10004,Task,Done,High,Cinth,01/Sep/26 8:00 AM,01/Oct/26 12:00 AM,,aws,dr,,,
