@@ -6,6 +6,19 @@ export default function Board({ statuses, fields, tickets, actions, onOpen }) {
   const [q, setQ] = useState('')
   const [dragId, setDragId] = useState(null)
   const [over, setOver] = useState(null) // {status, beforeId}
+  const [dragCol, setDragCol] = useState(null)
+  const [colOver, setColOver] = useState(null) // {id, side: 'left'|'right'}
+
+  async function dropCol() {
+    const from = dragCol, target = colOver
+    setDragCol(null); setColOver(null)
+    if (!from || !target || target.id === from) return
+    const ids = statuses.map(x => x.id).filter(id => id !== from)
+    let idx = ids.indexOf(target.id) + (target.side === 'right' ? 1 : 0)
+    ids.splice(idx, 0, from)
+    await Promise.all(ids.map((id, i) =>
+      statuses.find(x => x.id === id).position !== i ? actions.saveRow('statuses', 'statuses', { id, position: i }) : null))
+  }
   const [adding, setAdding] = useState(null)
   const [newTitle, setNewTitle] = useState('')
   const [newCol, setNewCol] = useState('')
@@ -69,10 +82,24 @@ export default function Board({ statuses, fields, tickets, actions, onOpen }) {
         {statuses.map(s => {
           const list = colTickets(s.id)
           return (
-            <section key={s.id} className={'column' + (over?.status === s.id ? ' over' : '')}
-              onDragOver={e => { e.preventDefault(); if (over?.status !== s.id || over.beforeId) setOver({ status: s.id, beforeId: null }) }}
-              onDrop={e => { e.preventDefault(); drop(s.id, over?.status === s.id ? over.beforeId : null) }}>
-              <header className="col-head">
+            <section key={s.id}
+              className={'column' + (!dragCol && over?.status === s.id ? ' over' : '') + (dragCol === s.id ? ' col-dragging' : '') +
+                (dragCol && colOver?.id === s.id && dragCol !== s.id ? ' col-drop-' + colOver.side : '')}
+              onDragOver={e => {
+                e.preventDefault()
+                if (dragCol) {
+                  const r = e.currentTarget.getBoundingClientRect()
+                  const side = e.clientX < r.left + r.width / 2 ? 'left' : 'right'
+                  if (colOver?.id !== s.id || colOver.side !== side) setColOver({ id: s.id, side })
+                  return
+                }
+                if (over?.status !== s.id || over.beforeId) setOver({ status: s.id, beforeId: null })
+              }}
+              onDrop={e => { e.preventDefault(); if (dragCol) return dropCol(); drop(s.id, over?.status === s.id ? over.beforeId : null) }}>
+              <header className="col-head" draggable title="Drag to reorder columns"
+                onDragStart={e => { setDragCol(s.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', 'col:' + s.id) }}
+                onDragEnd={() => { setDragCol(null); setColOver(null) }}>
+                <span className="grip" aria-hidden>⋮⋮</span>
                 <span className="dot" style={{ background: s.color }} />
                 <span className="col-name">{s.name}</span>
                 <span className="count">{list.length}</span>
@@ -86,8 +113,8 @@ export default function Board({ statuses, fields, tickets, actions, onOpen }) {
                       className={'ticket' + (dragId === t.id ? ' dragging' : '') + (over?.beforeId === t.id ? ' drop-before' : '')}
                       onDragStart={e => { setDragId(t.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', t.id) }}
                       onDragEnd={() => { setDragId(null); setOver(null) }}
-                      onDragOver={e => { e.preventDefault(); e.stopPropagation(); if (over?.beforeId !== t.id) setOver({ status: s.id, beforeId: t.id }) }}
-                      onDrop={e => { e.preventDefault(); e.stopPropagation(); drop(s.id, t.id) }}
+                      onDragOver={e => { if (dragCol) return; e.preventDefault(); e.stopPropagation(); if (over?.beforeId !== t.id) setOver({ status: s.id, beforeId: t.id }) }}
+                      onDrop={e => { if (dragCol) return; e.preventDefault(); e.stopPropagation(); drop(s.id, t.id) }}
                       onClick={() => onOpen(t.id)}>
                       {parent && <div className="parent-line" title={ticketKey(parent) + ' ' + parent.title}>↳ {parent.title}</div>}
                       <div className="ticket-title">{t.title}</div>

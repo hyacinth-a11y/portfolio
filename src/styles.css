@@ -189,3 +189,11 @@ h3, h4 { color: var(--text); }
 .main-col, .side-col { min-width: 0; }
 .desc a, .comment-body a { word-break: break-all; }
 .side-col select, .side-col input { max-width: 100%; }
+.col-head { cursor: grab; border-radius: 4px; }
+.col-head:hover { background: var(--hover); }
+.col-head:active { cursor: grabbing; }
+.grip { color: var(--muted); opacity: 0; font-size: 11px; letter-spacing: -2px; margin-right: -4px; transition: opacity .1s; }
+.col-head:hover .grip { opacity: 1; }
+.column.col-dragging { opacity: .45; }
+.column.col-drop-left { box-shadow: -4px 0 0 var(--accent); }
+.column.col-drop-right { box-shadow: 4px 0 0 var(--accent); }
