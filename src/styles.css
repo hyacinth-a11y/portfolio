@@ -169,3 +169,23 @@ h4 { margin: 20px 0 8px; font-size: 14px; }
 input[type=checkbox] { accent-color: var(--accent); }
 .col-head { color: var(--text); }
 h3, h4 { color: var(--text); }
+
+/* work types & hierarchy */
+.type-filter { display: flex; gap: 4px; flex-wrap: wrap; }
+.type-filter .chip { padding: 4px 10px; }
+.parent-line { font-size: 11px; color: var(--muted); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.type-icon { font-size: 11px; }
+.foot-right { display: flex; gap: 8px; }
+.type-select { width: auto !important; flex: 1; }
+.crumbs { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.children { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.child-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.child-row:hover { background: var(--hover); }
+.child-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-pill { background: var(--chip); color: var(--chip-text); white-space: nowrap; }
+.child-add { display: flex; gap: 6px; padding: 6px; }
+.child-add select { width: auto; }
+.child-add input { border-color: transparent !important; }
+.main-col, .side-col { min-width: 0; }
+.desc a, .comment-body a { word-break: break-all; }
+.side-col select, .side-col input { max-width: 100%; }

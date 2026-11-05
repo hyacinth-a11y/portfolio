@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { displayValue, ticketKey, checklistProgress, matches } from './format.js'
+import { displayValue, ticketKey, checklistProgress, matches, WORK_TYPES, typeOf } from './format.js'
 import { COLORS } from './api.js'
 
 export default function Board({ statuses, fields, tickets, actions, onOpen }) {
@@ -9,10 +9,15 @@ export default function Board({ statuses, fields, tickets, actions, onOpen }) {
   const [adding, setAdding] = useState(null)
   const [newTitle, setNewTitle] = useState('')
   const [newCol, setNewCol] = useState('')
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [newType, setNewType] = useState('project')
+  const byId = Object.fromEntries(tickets.map(t => [t.id, t]))
+  const childCount = {}
+  tickets.forEach(t => { if (t.parent_id) childCount[t.parent_id] = (childCount[t.parent_id] || 0) + 1 })
 
   const cardFields = fields.filter(f => f.show_on_card)
   const colTickets = sid => tickets
-    .filter(t => (t.status_id ?? statuses[0]?.id) === sid && matches(t, q, fields))
+    .filter(t => (t.status_id ?? statuses[0]?.id) === sid && matches(t, q, fields) && (typeFilter === 'all' || typeOf(t).value === typeFilter))
     .sort((a, b) => a.position - b.position)
 
   function drop(statusId, beforeId) {
@@ -34,7 +39,7 @@ export default function Board({ statuses, fields, tickets, actions, onOpen }) {
     const title = newTitle.trim()
     if (!title) { setAdding(null); return }
     setNewTitle('')
-    await actions.createTicket(sid, title)
+    await actions.createTicket(sid, title, { work_type: newType })
   }
 
   async function addColumn(e) {
@@ -51,7 +56,14 @@ export default function Board({ statuses, fields, tickets, actions, onOpen }) {
     <main className="board-wrap">
       <div className="toolbar">
         <input className="search" placeholder="Search tickets…" value={q} onChange={e => setQ(e.target.value)} />
-        <span className="muted small">{tickets.length} tickets</span>
+        <div className="type-filter">
+          {[{ value: 'all', label: 'All' }, ...WORK_TYPES].map(w => (
+            <button key={w.value} className={'chip' + (typeFilter === w.value ? ' on' : '')} onClick={() => setTypeFilter(w.value)}>
+              {w.icon && <span style={{ color: w.color }}>{w.icon} </span>}{w.label}
+              <span className="muted"> {w.value === 'all' ? tickets.length : tickets.filter(t => typeOf(t).value === w.value).length}</span>
+            </button>
+          ))}
+        </div>
       </div>
       <div className="board">
         {statuses.map(s => {
@@ -68,6 +80,7 @@ export default function Board({ statuses, fields, tickets, actions, onOpen }) {
               <div className="cards">
                 {list.map(t => {
                   const prog = checklistProgress(t)
+                  const wt = typeOf(t), parent = byId[t.parent_id]
                   return (
                     <article key={t.id} draggable
                       className={'ticket' + (dragId === t.id ? ' dragging' : '') + (over?.beforeId === t.id ? ' drop-before' : '')}
@@ -76,14 +89,18 @@ export default function Board({ statuses, fields, tickets, actions, onOpen }) {
                       onDragOver={e => { e.preventDefault(); e.stopPropagation(); if (over?.beforeId !== t.id) setOver({ status: s.id, beforeId: t.id }) }}
                       onDrop={e => { e.preventDefault(); e.stopPropagation(); drop(s.id, t.id) }}
                       onClick={() => onOpen(t.id)}>
+                      {parent && <div className="parent-line" title={ticketKey(parent) + ' ' + parent.title}>↳ {parent.title}</div>}
                       <div className="ticket-title">{t.title}</div>
                       {cardFields.map(f => {
                         const v = displayValue(f, t.custom?.[f.id])
                         return v ? <div key={f.id} className="card-field"><span className="muted">{f.type === 'checkbox' ? '' : f.name + ': '}</span>{v}</div> : null
                       })}
                       <div className="ticket-foot">
-                        <span className="key">{ticketKey(t)}</span>
-                        {prog && <span className={'prog' + (prog.done === prog.total ? ' full' : '')}>☑ {prog.done}/{prog.total}</span>}
+                        <span className="key"><span className="type-icon" style={{ color: wt.color }} title={wt.label}>{wt.icon}</span> {ticketKey(t)}</span>
+                        <span className="foot-right">
+                          {childCount[t.id] > 0 && <span className="muted" title="Child items">⑂ {childCount[t.id]}</span>}
+                          {prog && <span className={'prog' + (prog.done === prog.total ? ' full' : '')}>☑ {prog.done}/{prog.total}</span>}
+                        </span>
                       </div>
                     </article>
                   )
@@ -94,8 +111,12 @@ export default function Board({ statuses, fields, tickets, actions, onOpen }) {
                   <textarea autoFocus placeholder="What needs to be done?" value={newTitle}
                     onChange={e => setNewTitle(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addTicket(s.id) } if (e.key === 'Escape') setAdding(null) }}
-                    onBlur={() => { if (!newTitle.trim()) setAdding(null) }} />
-                  <div className="row"><button className="primary" type="submit">Create</button>
+                    onBlur={e => { if (!newTitle.trim() && !e.currentTarget.form.contains(e.relatedTarget)) setAdding(null) }} />
+                  <div className="row">
+                    <select className="type-select" value={newType} onChange={e => setNewType(e.target.value)} onMouseDown={e => e.stopPropagation()}>
+                      {WORK_TYPES.map(w => <option key={w.value} value={w.value}>{w.icon} {w.label}</option>)}
+                    </select>
+                    <button className="primary" type="submit">Create</button>
                     <button type="button" className="ghost" onClick={() => setAdding(null)}>Cancel</button></div>
                 </form>
               ) : (

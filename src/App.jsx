@@ -60,13 +60,13 @@ function Workspace({ session }) {
 
   const load = useCallback(async () => {
     try {
-      let [statuses, fields, tickets, templates] = await Promise.all([
-        api.list('statuses'), api.list('fields'), api.list('tickets'), api.list('checklist_templates'),
+      let [statuses, fields, tickets, templates, settingsRows] = await Promise.all([
+        api.list('statuses'), api.list('fields'), api.list('tickets'), api.list('checklist_templates'), api.list('settings'),
       ])
       if (statuses.length === 0) {
         statuses = await api.insert('statuses', DEFAULT_STATUSES.map((s, i) => ({ ...s, position: i })))
       }
-      setData({ statuses, fields, tickets, templates })
+      setData({ statuses, fields, tickets, templates, settings: settingsRows[0] || null })
     } catch (e) { setError(e.message || String(e)) }
   }, [])
   useEffect(() => { load() }, [load])
@@ -76,13 +76,18 @@ function Workspace({ session }) {
   const actions = {
     reload: load,
     setError,
-    async createTicket(statusId, title) {
+    async saveSettings(patch) {
+      const cur = data.settings
+      const row = cur ? await api.update('settings', cur.id, patch) : await api.insertOne('settings', patch)
+      setData(d => ({ ...d, settings: { ...(cur || {}), ...row } }))
+    },
+    async createTicket(statusId, title, extra = {}) {
       const inStatus = data.tickets.filter(t => t.status_id === statusId)
       const autoLists = data.templates.filter(t => t.auto_apply).map(t => ({
         id: newId(), title: t.name, items: t.items.map(text => ({ id: newId(), text, done: false })),
       }))
       const t = await api.insertOne('tickets', {
-        title, status_id: statusId, checklists: autoLists,
+        title, status_id: statusId, checklists: autoLists, work_type: 'project', ...extra,
         position: Math.max(0, ...inStatus.map(x => x.position)) + 1,
       })
       setData(d => ({ ...d, tickets: [...d.tickets, t] }))
@@ -93,7 +98,7 @@ function Workspace({ session }) {
       try { await api.update('tickets', id, patch) } catch (e) { setError(e.message); load() }
     },
     async deleteTicket(id) {
-      setData(d => ({ ...d, tickets: d.tickets.filter(t => t.id !== id) }))
+      setData(d => ({ ...d, tickets: d.tickets.filter(t => t.id !== id).map(t => t.parent_id === id ? { ...t, parent_id: null } : t) }))
       await api.remove('tickets', id)
     },
     async saveRow(table, key, row) {
@@ -143,10 +148,10 @@ function Workspace({ session }) {
         </div>
       </header>
       {view === 'board' && <Board statuses={statuses} fields={fields} tickets={data.tickets} actions={actions} onOpen={setOpenId} />}
-      {view === 'settings' && <Settings statuses={statuses} fields={fields} templates={data.templates} tickets={data.tickets} actions={actions} />}
-      {view === 'import' && <ImportCsv statuses={statuses} fields={fields} actions={actions} onDone={() => { load(); setView('board') }} />}
+      {view === 'settings' && <Settings settings={data.settings} statuses={statuses} fields={fields} templates={data.templates} tickets={data.tickets} actions={actions} />}
+      {view === 'import' && <ImportCsv statuses={statuses} fields={fields} tickets={data.tickets} settings={data.settings} actions={actions} onDone={() => { load(); setView('board') }} />}
       {openTicket && (
-        <TicketModal ticket={openTicket} statuses={statuses} fields={fields} templates={data.templates}
+        <TicketModal ticket={openTicket} tickets={data.tickets} onOpen={setOpenId} statuses={statuses} fields={fields} templates={data.templates}
           actions={actions} onClose={() => setOpenId(null)} />
       )}
     </div>

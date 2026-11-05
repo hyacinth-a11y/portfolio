@@ -1,22 +1,43 @@
 import { useState } from 'react'
 import Papa from 'papaparse'
 import { api, FIELD_TYPES, COLORS } from './api.js'
-import { displayValue, ticketKey } from './format.js'
+import { displayValue, ticketKey, typeOf } from './format.js'
 
-export default function Settings({ statuses, fields, templates, tickets, actions }) {
-  const [tab, setTab] = useState('statuses')
+export default function Settings({ settings, statuses, fields, templates, tickets, actions }) {
+  const [tab, setTab] = useState('general')
   return (
     <main className="settings">
       <div className="subtabs">
-        {[['statuses', 'Statuses'], ['fields', 'Fields'], ['templates', 'Checklist templates'], ['data', 'Export']].map(([k, l]) => (
+        {[['general', 'General'], ['statuses', 'Statuses'], ['fields', 'Fields'], ['templates', 'Checklist templates'], ['data', 'Export']].map(([k, l]) => (
           <button key={k} className={tab === k ? 'tab on' : 'tab'} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
+      {tab === 'general' && <General settings={settings} tickets={tickets} actions={actions} />}
       {tab === 'statuses' && <Statuses statuses={statuses} tickets={tickets} actions={actions} />}
       {tab === 'fields' && <Fields fields={fields} actions={actions} />}
       {tab === 'templates' && <Templates templates={templates} actions={actions} />}
       {tab === 'data' && <Export statuses={statuses} fields={fields} tickets={tickets} />}
     </main>
+  )
+}
+
+function General({ settings, tickets, actions }) {
+  const prefix = settings?.key_prefix || 'PRJ'
+  const next = Math.max(0, ...tickets.map(t => t.number || 0)) + 1
+  return (
+    <section className="card wide">
+      <h3>Issue keys</h3>
+      <p className="muted">Every ticket gets a key like <b>{prefix}-{next}</b>. Imported Jira tickets keep their original key; new tickets continue numbering from the highest one.</p>
+      <div className="set-row">
+        <label className="inline">Key prefix</label>
+        <input style={{ maxWidth: 160 }} defaultValue={prefix} key={prefix}
+          onBlur={e => {
+            const v = e.target.value.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '')
+            if (v && v !== prefix) actions.saveSettings({ key_prefix: v }); e.target.value = v || prefix
+          }} />
+        <span className="muted small">Next new ticket: {prefix}-{next}. Existing keys don't change.</span>
+      </div>
+    </section>
   )
 }
 
@@ -148,11 +169,12 @@ function Export({ statuses, fields, tickets }) {
       const comments = await api.list('comments')
       const st = Object.fromEntries(statuses.map(s => [s.id, s.name]))
       const maxC = Math.max(0, ...tickets.map(t => comments.filter(c => c.ticket_id === t.id).length))
-      const header = ['Key', 'Title', 'Description', 'Status', 'Created', ...fields.map(f => f.name), 'Checklists',
+      const byId = Object.fromEntries(tickets.map(t => [t.id, t]))
+      const header = ['Issue key', 'Work type', 'Parent key', 'Title', 'Description', 'Status', 'Created', ...fields.map(f => f.name), 'Checklists',
         ...Array.from({ length: maxC }, () => 'Comment')]
-      const rows = [...tickets].sort((a, b) => a.number - b.number).map(t => {
+      const rows = [...tickets].sort((a, b) => (a.number || 0) - (b.number || 0)).map(t => {
         const cs = comments.filter(c => c.ticket_id === t.id).sort((a, b) => a.created_at.localeCompare(b.created_at))
-        return [ticketKey(t), t.title, t.description, st[t.status_id] || '', t.created_at,
+        return [ticketKey(t), typeOf(t).label, byId[t.parent_id] ? ticketKey(byId[t.parent_id]) : '', t.title, t.description, st[t.status_id] || '', t.created_at,
           ...fields.map(f => f.type === 'multiselect' ? (t.custom?.[f.id] || []).join(', ') : f.type === 'checkbox' ? String(!!t.custom?.[f.id]) : (t.custom?.[f.id] ?? '')),
           (t.checklists || []).map(l => l.title + ': ' + l.items.map(i => (i.done ? '[x] ' : '[ ] ') + i.text).join('; ')).join(' | '),
           ...Array.from({ length: maxC }, (_, i) => cs[i] ? `${cs[i].created_at};${cs[i].author || ''};${cs[i].body}` : '')]

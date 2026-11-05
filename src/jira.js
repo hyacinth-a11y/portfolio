@@ -52,17 +52,20 @@ export function suggest(name, values, multiCol, existingFields) {
   if (n === 'status') return { kind: 'status' }
   if (n === 'comment' || n === 'comments' || n === 'comment body') return { kind: 'comments' }
   if (n === 'created') return { kind: 'created' }
+  if (n === 'issue key' || n === 'key') return { kind: 'key' }
+  if (n === 'issue id') return { kind: 'jira_id' }
+  if (n === 'parent key') return { kind: 'parent_key' }
+  if (n === 'parent' || n === 'parent id') return { kind: 'parent_id' }
+  if (n === 'issue type' || n === 'work type') return { kind: 'worktype' }
   const existing = existingFields.find(f => f.name.toLowerCase() === n)
   if (existing) return { kind: 'field', fieldId: existing.id }
   if (!filled.length) return { kind: 'ignore' }
   if (multiCol && /onboarding tracker|checklist|check ?list/.test(n)) return { kind: 'checklist' }
-  if (n === 'issue type' || n === 'parent summary') return { kind: 'new', type: 'select', name: n === 'parent summary' ? 'Workstream' : 'Issue Type' }
-  if (['rank', 'parent', 'parent key', 'approvals', 'project key', 'project name', 'project lead', 'creator', 'reporter', 'resolution'].includes(n) || n.startsWith('[chart]')) return { kind: 'ignore' }
+  if (['parent summary', 'rank', 'approvals', 'project key', 'project name', 'project lead', 'creator', 'reporter', 'resolution'].includes(n) || n.startsWith('[chart]')) return { kind: 'ignore' }
   // same value on every row (e.g. Priority = Medium everywhere) -> nothing to learn
   if (filled.length === values.length && values.length > 3 && new Set(filled).size === 1) return { kind: 'ignore' }
   const NOISE = ['issue id', 'parent id', 'watchers', 'watchers id', 'creator id', 'reporter id', 'assignee id', 'status category changed', 'last viewed', 'σ time spent', 'σ original estimate', 'σ remaining estimate', 'work ratio', 'votes', 'issue type', 'status category', 'project id', 'project type', 'project lead id', 'project url', 'project description', 'attachment', 'sprint']
   if (NOISE.includes(n) || n.endsWith(' id')) return { kind: 'ignore' }
-  if (n === 'issue key' || n === 'key') return { kind: 'new', type: 'text', name: 'Jira Key' }
   if (n === 'labels' || n === 'components' || n === 'component/s' || n === 'fix versions' || n === 'fix version/s') return { kind: 'new', type: 'multiselect' }
   if (multiCol) return { kind: 'new', type: 'multiselect' }
   if (filled.every(isUrl)) return { kind: 'new', type: 'link' }

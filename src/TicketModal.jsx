@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, newId } from './api.js'
 import FieldInput from './FieldInput.jsx'
-import { ticketKey } from './format.js'
+import { ticketKey, WORK_TYPES, typeOf, levelOf, descendants } from './format.js'
 
 // Renders plain text with [text](url) links, **bold** and bare URLs.
 function Linkify({ text }) {
@@ -15,7 +15,40 @@ function Linkify({ text }) {
   })
 }
 
-export default function TicketModal({ ticket, statuses, fields, templates, actions, onClose }) {
+export default function TicketModal({ ticket, tickets, onOpen, statuses, fields, templates, actions, onClose }) {
+  const [childTitle, setChildTitle] = useState('')
+  const wt = typeOf(ticket)
+  const byId = Object.fromEntries(tickets.map(t => [t.id, t]))
+  const children = tickets.filter(t => t.parent_id === ticket.id).sort((a, b) => (a.number || 0) - (b.number || 0))
+  const lowerTypes = WORK_TYPES.filter(w => w.level > wt.level)
+  const [childType, setChildType] = useState(null)
+  const chosenChildType = lowerTypes.find(w => w.value === childType) || lowerTypes[0]
+  // breadcrumb: parent chain
+  const chain = []
+  for (let p = byId[ticket.parent_id], guard = 0; p && guard < 10; p = byId[p.parent_id], guard++) chain.unshift(p)
+  const blocked = descendants(ticket.id, tickets)
+  const parentOptions = tickets.filter(t => t.id !== ticket.id && !blocked.has(t.id) && levelOf(t) < wt.level)
+    .sort((a, b) => levelOf(a) - levelOf(b) || a.title.localeCompare(b.title))
+  const statusName = id => statuses.find(s => s.id === id)?.name || ''
+
+  function changeType(v) {
+    const nt = WORK_TYPES.find(w => w.value === v)
+    const badChild = children.find(c => levelOf(c) <= nt.level)
+    if (badChild) return alert(`Can't make this a ${nt.label}: it has a child "${badChild.title}" that is a ${typeOf(badChild).label}. Move or change that child first.`)
+    const parent = byId[ticket.parent_id]
+    if (parent && levelOf(parent) >= nt.level) {
+      if (!confirm(`A ${nt.label} can't sit under a ${typeOf(parent).label}. Remove its parent "${parent.title}"?`)) return
+      return upd({ work_type: v, parent_id: null })
+    }
+    upd({ work_type: v })
+  }
+  async function addChild(e) {
+    e.preventDefault()
+    if (!childTitle.trim() || !chosenChildType) return
+    await actions.createTicket(statuses[0].id, childTitle.trim(), { work_type: chosenChildType.value, parent_id: ticket.id })
+    setChildTitle('')
+  }
+
   const [title, setTitle] = useState(ticket.title)
   const [desc, setDesc] = useState(ticket.description || '')
   const [editDesc, setEditDesc] = useState(false)
@@ -67,7 +100,11 @@ export default function TicketModal({ ticket, statuses, fields, templates, actio
     <div className="overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal">
         <div className="modal-head">
-          <span className="key">{ticketKey(ticket)}</span>
+          <div className="crumbs">
+            {chain.map(p => <span key={p.id}><button className="link small" onClick={() => onOpen(p.id)}>
+              <span style={{ color: typeOf(p).color }}>{typeOf(p).icon}</span> {ticketKey(p)}</button> <span className="muted">/</span> </span>)}
+            <span className="key"><span style={{ color: wt.color }}>{wt.icon}</span> {ticketKey(ticket)}</span>
+          </div>
           <div className="row">
             <button className="ghost danger" onClick={async () => {
               if (confirm('Delete this ticket and its comments?')) { await actions.deleteTicket(ticket.id); onClose() }
@@ -95,6 +132,27 @@ export default function TicketModal({ ticket, statuses, fields, templates, actio
                 {ticket.description ? <Linkify text={ticket.description} /> : 'Add a description…'}
               </div>
             )}
+
+            {lowerTypes.length > 0 && <>
+              <h4>Child items <span className="muted small">{children.length || ''}</span></h4>
+              <div className="children">
+                {children.map(c => (
+                  <div key={c.id} className="child-row" onClick={() => onOpen(c.id)}>
+                    <span style={{ color: typeOf(c).color }} title={typeOf(c).label}>{typeOf(c).icon}</span>
+                    <span className="key">{ticketKey(c)}</span>
+                    <span className="child-title">{c.title}</span>
+                    <span className="pill status-pill">{statusName(c.status_id)}</span>
+                  </div>
+                ))}
+                <form className="child-add" onSubmit={addChild}>
+                  {lowerTypes.length > 1 && <select value={chosenChildType.value} onChange={e => setChildType(e.target.value)}>
+                    {lowerTypes.map(w => <option key={w.value} value={w.value}>{w.icon} {w.label}</option>)}
+                  </select>}
+                  <input placeholder={`+ Add a ${chosenChildType.label.toLowerCase()}`} value={childTitle} onChange={e => setChildTitle(e.target.value)} />
+                  {childTitle.trim() && <button className="primary" type="submit">Add</button>}
+                </form>
+              </div>
+            </>}
 
             <div className="section-head">
               <h4>Checklists</h4>
@@ -131,6 +189,23 @@ export default function TicketModal({ ticket, statuses, fields, templates, actio
           </div>
 
           <aside className="side-col">
+            <label className="field">
+              <span>Work type</span>
+              <select value={wt.value} onChange={e => changeType(e.target.value)}>
+                {WORK_TYPES.map(w => <option key={w.value} value={w.value}>{w.icon} {w.label}</option>)}
+              </select>
+            </label>
+            {wt.level > 0 && <label className="field">
+              <span>Parent</span>
+              <select value={ticket.parent_id || ''} onChange={e => upd({ parent_id: e.target.value || null })}>
+                <option value="">None</option>
+                {WORK_TYPES.filter(w => w.level < wt.level).map(w => (
+                  <optgroup key={w.value} label={w.label}>
+                    {parentOptions.filter(t => typeOf(t).value === w.value).map(t => <option key={t.id} value={t.id}>{ticketKey(t)} · {t.title}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+            </label>}
             <label className="field">
               <span>Status</span>
               <select value={ticket.status_id || ''} onChange={e => upd({ status_id: e.target.value })}>

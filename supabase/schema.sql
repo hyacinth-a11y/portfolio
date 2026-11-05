@@ -1,7 +1,7 @@
 -- =========================================================
 -- Project Portfolio Board — database setup
 -- Paste this whole file into Supabase > SQL Editor > Run.
--- Safe to run once on a fresh project.
+-- Safe to run again: re-running it upgrades an existing setup without touching your data.
 -- =========================================================
 
 create table if not exists statuses (
@@ -59,15 +59,37 @@ create table if not exists checklist_templates (
   created_at timestamptz not null default now()
 );
 
--- Auto-number tickets per user (PRJ-1, PRJ-2, ...)
+-- ---- v2: work types, hierarchy, issue keys (safe to re-run) ----
+create table if not exists settings (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null unique default auth.uid() references auth.users on delete cascade,
+  key_prefix text not null default 'PRJ',
+  created_at timestamptz not null default now()
+);
+alter table tickets add column if not exists key text;                       -- e.g. POC-71
+alter table tickets add column if not exists jira_id text;                   -- Jira "Issue id"
+alter table tickets add column if not exists work_type text not null default 'project'; -- workstream | project | subtask
+alter table tickets add column if not exists parent_id uuid references tickets on delete set null;
+create index if not exists tickets_parent on tickets (parent_id);
+
+-- Auto-number tickets per user and give them a key (PREFIX-NUMBER)
 create or replace function set_ticket_number() returns trigger as $$
 begin
-  if new.number is null then
-    select coalesce(max(number), 0) + 1 into new.number from tickets where user_id = new.user_id;
+  if tg_op = 'INSERT' then
+    if new.number is null then
+      select coalesce(max(number), 0) + 1 into new.number from tickets where user_id = new.user_id;
+    end if;
+    if new.key is null then
+      new.key := coalesce((select key_prefix from settings where user_id = new.user_id limit 1), 'PRJ') || '-' || new.number;
+    end if;
   end if;
   new.updated_at := now();
   return new;
 end; $$ language plpgsql;
+
+-- give older tickets a key
+update tickets set key = coalesce((select key_prefix from settings st where st.user_id = tickets.user_id), 'PRJ') || '-' || number
+  where key is null and number is not null;
 
 drop trigger if exists tickets_number on tickets;
 create trigger tickets_number before insert or update on tickets
@@ -79,11 +101,12 @@ alter table fields enable row level security;
 alter table tickets enable row level security;
 alter table comments enable row level security;
 alter table checklist_templates enable row level security;
+alter table settings enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['statuses','fields','tickets','comments','checklist_templates'] loop
+  foreach t in array array['statuses','fields','tickets','comments','checklist_templates','settings'] loop
     execute format('drop policy if exists "owner_all" on %I', t);
     execute format('create policy "owner_all" on %I for all using (user_id = auth.uid()) with check (user_id = auth.uid())', t);
   end loop;
@@ -96,6 +119,6 @@ create index if not exists comments_ticket on comments (ticket_id, created_at);
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
-    grant select, insert, update, delete on statuses, fields, tickets, comments, checklist_templates to authenticated;
+    grant select, insert, update, delete on statuses, fields, tickets, comments, checklist_templates, settings to authenticated;
   end if;
 end $$;

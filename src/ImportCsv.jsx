@@ -2,8 +2,9 @@ import { useState } from 'react'
 import Papa from 'papaparse'
 import { api, newId, FIELD_TYPES, COLORS } from './api.js'
 import { suggest, convert, parseComment, parseDate, jiraToText } from './jira.js'
+import { mapWorkType, WORK_TYPES, levelOf } from './format.js'
 
-export default function ImportCsv({ statuses, fields, actions, onDone }) {
+export default function ImportCsv({ statuses, fields, tickets: existing = [], settings, actions, onDone }) {
   const [rows, setRows] = useState(null)        // data rows (arrays)
   const [groups, setGroups] = useState([])      // [{name, idx:[], map:{kind,...}}]
   const [fileName, setFileName] = useState('')
@@ -27,6 +28,13 @@ export default function ImportCsv({ statuses, fields, actions, onDone }) {
           const label = name.replace(/^Custom field \((.*)\)$/i, '$1').trim()
           return { name, label, idx, filled: filled.length, sample: filled.slice(0, 3), map: suggest(label, values, idx.length > 1, fields) }
         })
+        // empty columns are skipped; one-of-a-kind roles (title, status, key…) go to the first matching column only
+        const SINGLE = ['title', 'description', 'status', 'created', 'key', 'worktype', 'jira_id', 'parent_key', 'parent_id']
+        const seen = new Set()
+        gs.forEach(g => {
+          if (!g.filled) { g.map = { kind: 'ignore' }; return }
+          if (SINGLE.includes(g.map.kind)) { if (seen.has(g.map.kind)) g.map = { kind: 'ignore' }; else seen.add(g.map.kind) }
+        })
         if (!gs.some(g => g.map.kind === 'title')) {
           const g = gs.find(g => g.filled) ; if (g) g.map = { kind: 'title' }
         }
@@ -45,6 +53,13 @@ export default function ImportCsv({ statuses, fields, actions, onDone }) {
   const newStatusNames = statusGroup ? [...new Set(rows.map(r => String(r[statusGroup.idx[0]] || '').trim()).filter(Boolean))]
     .filter(n => !statuses.some(s => s.name.toLowerCase() === n.toLowerCase())) : []
   const newFieldCount = groups.filter(g => g.map.kind === 'new').length
+  const keyGroup = groups.find(g => g.map.kind === 'key')
+  const typeGroup = groups.find(g => g.map.kind === 'worktype')
+  const existingKeys = new Set(existing.map(t => (t.key || '').toUpperCase()).filter(Boolean))
+  const cellOf = (r, g) => g ? String(r[g.idx[0]] ?? '').trim() : ''
+  const dupCount = rows && keyGroup ? rows.filter(r => existingKeys.has(cellOf(r, keyGroup).toUpperCase())).length : 0
+  const typeCounts = rows && typeGroup ? WORK_TYPES.map(w => [w.label, rows.filter(r => mapWorkType(cellOf(r, typeGroup)) === w.value).length]).filter(x => x[1]) : null
+  const nestCount = rows ? rows.filter(r => groups.some(g => (g.map.kind === 'parent_key' || g.map.kind === 'parent_id') && cellOf(r, g))).length : 0
   const checklistCount = groups.filter(g => g.map.kind === 'checklist').length
   const commentCount = rows ? groups.filter(g => g.map.kind === 'comments').reduce((n, g) => n + g.filled, 0) : 0
 
@@ -111,16 +126,27 @@ export default function ImportCsv({ statuses, fields, actions, onDone }) {
       setProgress('Creating tickets…')
       const pos = {}
       const tickets = [], comments = []
+      const prefixCount = {}
+      let skipped = 0
       rows.forEach(r => {
         const title = String(r[titleGroup.idx[0]] || '').trim()
         if (!title) return
+        const key = cellOf(r, keyGroup).toUpperCase()
+        if (key && existingKeys.has(key)) { skipped++; return }
         const id = newId()
         const sid = statusGroup ? statusId(r[statusGroup.idx[0]]) : allStatuses[0].id
         pos[sid] = (pos[sid] || 0) + 1
-        const t = { id, title, status_id: sid, position: pos[sid], description: '', custom: {}, checklists: [] }
+        const t = { id, title, status_id: sid, position: pos[sid], description: '', custom: {}, checklists: [], work_type: 'project', created_at: new Date().toISOString() }
+        const km = key.match(/^([A-Z][A-Z0-9_]*)-(\d+)$/)
+        if (km) { t.key = key; t.number = +km[2]; prefixCount[km[1]] = (prefixCount[km[1]] || 0) + 1 }
+        else if (key) t.key = key
         groups.forEach((g, i) => {
           const cells = g.idx.map(x => r[x])
-          if (g.map.kind === 'description') t.description = cells.filter(Boolean).map(jiraToText).join('\n\n')
+          if (g.map.kind === 'worktype') { if (String(cells[0] || '').trim()) t.work_type = mapWorkType(cells[0]) }
+          else if (g.map.kind === 'jira_id') { if (cells[0]) t.jira_id = String(cells[0]).trim() }
+          else if (g.map.kind === 'parent_key') { if (cells[0]) t._parentKey = String(cells[0]).trim().toUpperCase() }
+          else if (g.map.kind === 'parent_id') { if (cells[0]) t._parentJira = String(cells[0]).trim() }
+          else if (g.map.kind === 'description') t.description = cells.filter(Boolean).map(jiraToText).join('\n\n')
           else if (g.map.kind === 'created') { const d = parseDate(cells[0]); if (d) t.created_at = d.toISOString() }
           else if (g.map.kind === 'checklist') {
             const ticked = new Set(cells.map(c => String(c ?? '').trim()).filter(Boolean))
@@ -136,6 +162,23 @@ export default function ImportCsv({ statuses, fields, actions, onDone }) {
         })
         tickets.push(t)
       })
+      // 3b. nesting: resolve parents by key / Jira id (from this file or tickets already on the board)
+      const byKey = {}, byJira = {}
+      ;[...existing, ...tickets].forEach(t => { if (t.key) byKey[t.key.toUpperCase()] = t; if (t.jira_id) byJira[t.jira_id] = t })
+      let nested = 0, badNest = 0
+      tickets.forEach(t => {
+        const p = (t._parentKey && byKey[t._parentKey]) || (t._parentJira && byJira[t._parentJira])
+        if (p && p.id !== t.id) {
+          if (levelOf(p) < levelOf(t)) { t.parent_id = p.id; nested++ } else badNest++
+        }
+        delete t._parentKey; delete t._parentJira
+      })
+      // parents first, so they exist before their children are saved
+      tickets.sort((a, b) => levelOf(a) - levelOf(b))
+      // adopt the Jira prefix for new tickets if you haven't set your own
+      const topPrefix = Object.entries(prefixCount).sort((a, b) => b[1] - a[1])[0]?.[0]
+      if (topPrefix && (!settings || settings.key_prefix === 'PRJ')) await actions.saveSettings({ key_prefix: topPrefix })
+
       for (let i = 0; i < tickets.length; i += 200) {
         setProgress(`Creating tickets… ${Math.min(i + 200, tickets.length)}/${tickets.length}`)
         await api.insert('tickets', tickets.slice(i, i + 200))
@@ -145,7 +188,9 @@ export default function ImportCsv({ statuses, fields, actions, onDone }) {
         await api.insert('comments', comments.slice(i, i + 200))
       }
       setProgress('')
-      alert(`Imported ${tickets.length} tickets, ${comments.length} comments, ${toCreate.length} new fields, ${newStatusNames.length} new statuses.`)
+      alert(`Imported ${tickets.length} tickets (${nested} nested under a parent), ${comments.length} comments, ${toCreate.length} new fields, ${newStatusNames.length} new statuses.` +
+        (skipped ? `\nSkipped ${skipped} already on your board.` : '') +
+        (badNest ? `\n${badNest} couldn't be nested because the parent is the same or a lower level.` : ''))
       onDone()
     } catch (e) {
       setProgress(''); setErr('Import failed: ' + (e.message || e))
@@ -188,6 +233,11 @@ export default function ImportCsv({ statuses, fields, actions, onDone }) {
                         <option value="comments">Comments</option>
                         <option value="created">Created date</option>
                         <option value="checklist">Checklist (ticked values = done)</option>
+                        <option value="key">Issue key (e.g. POC-71)</option>
+                        <option value="worktype">Work type</option>
+                        <option value="jira_id">Jira issue id (for nesting)</option>
+                        <option value="parent_key">Parent key (for nesting)</option>
+                        <option value="parent_id">Parent id (for nesting)</option>
                         <option value="new">New field…</option>
                         {fields.length > 0 && <optgroup label="Existing field">
                           {fields.map(f => <option key={f.id} value={'field:' + f.id}>{f.name}</option>)}
@@ -206,10 +256,12 @@ export default function ImportCsv({ statuses, fields, actions, onDone }) {
             </tbody>
           </table>
           <div className="summary">
-            Will create <b>{rows.filter(r => titleGroup && String(r[titleGroup.idx[0]] || '').trim()).length}</b> tickets,
+            Will create <b>{rows.filter(r => titleGroup && String(r[titleGroup.idx[0]] || '').trim() && !(keyGroup && existingKeys.has(cellOf(r, keyGroup).toUpperCase()))).length}</b> tickets,
             {' '}<b>{commentCount}</b> comments, <b>{newFieldCount}</b> new fields
             {checklistCount > 0 && <>, <b>{checklistCount}</b> checklist{checklistCount > 1 ? 's' : ''} per ticket (also saved as a template)</>}
             {newStatusNames.length > 0 && <>, and <b>{newStatusNames.length}</b> new statuses ({newStatusNames.join(', ')})</>}.
+            {typeCounts && <div className="muted small">Work types: {typeCounts.map(([l, n]) => `${n} ${l}`).join(' · ')}{nestCount > 0 && ` · ${nestCount} will be nested under a parent`}</div>}
+            {dupCount > 0 && <div className="note small">{dupCount} rows have an issue key that's already on your board — they'll be skipped.</div>}
           </div>
           <div className="row">
             <button className="primary" disabled={!!progress} onClick={runImport}>{progress || 'Import'}</button>
