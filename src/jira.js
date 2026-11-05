@@ -33,10 +33,10 @@ export function parseComment(cell) {
     if (d) {
       const who = parts[1].trim()
       const readable = who && !/^[0-9a-f]{6,}|:|^\d+$/i.test(who) && who.length < 60
-      return { created_at: d.toISOString(), author: readable ? who : 'Imported from Jira', body: parts.slice(2).join(';').trim() }
+      return { created_at: d.toISOString(), author: readable ? who : 'Imported from Jira', body: jiraToText(parts.slice(2).join(';').trim()) }
     }
   }
-  return { body: s, author: 'Imported from Jira' }
+  return { body: jiraToText(s), author: 'Imported from Jira' }
 }
 
 const isUrl = v => /^https?:\/\/\S+$/i.test(v)
@@ -55,6 +55,11 @@ export function suggest(name, values, multiCol, existingFields) {
   const existing = existingFields.find(f => f.name.toLowerCase() === n)
   if (existing) return { kind: 'field', fieldId: existing.id }
   if (!filled.length) return { kind: 'ignore' }
+  if (multiCol && /onboarding tracker|checklist|check ?list/.test(n)) return { kind: 'checklist' }
+  if (n === 'issue type' || n === 'parent summary') return { kind: 'new', type: 'select', name: n === 'parent summary' ? 'Workstream' : 'Issue Type' }
+  if (['rank', 'parent', 'parent key', 'approvals', 'project key', 'project name', 'project lead', 'creator', 'reporter', 'resolution'].includes(n) || n.startsWith('[chart]')) return { kind: 'ignore' }
+  // same value on every row (e.g. Priority = Medium everywhere) -> nothing to learn
+  if (filled.length === values.length && values.length > 3 && new Set(filled).size === 1) return { kind: 'ignore' }
   const NOISE = ['issue id', 'parent id', 'watchers', 'watchers id', 'creator id', 'reporter id', 'assignee id', 'status category changed', 'last viewed', 'σ time spent', 'σ original estimate', 'σ remaining estimate', 'work ratio', 'votes', 'issue type', 'status category', 'project id', 'project type', 'project lead id', 'project url', 'project description', 'attachment', 'sprint']
   if (NOISE.includes(n) || n.endsWith(' id')) return { kind: 'ignore' }
   if (n === 'issue key' || n === 'key') return { kind: 'new', type: 'text', name: 'Jira Key' }
@@ -84,4 +89,31 @@ export function convert(type, cells) {
     case 'textarea': return vals.join('\n\n')
     default: return vals.join(', ')
   }
+}
+
+// Turn Jira wiki markup into readable text.
+// Links become [text](url), bold becomes **text** (both rendered by the ticket view).
+export function jiraToText(s) {
+  if (!s) return ''
+  let t = String(s).replace(/\r\n?/g, '\n')
+  t = t.replace(/\{(code|noformat|quote|panel)(:[^}]*)?\}/g, '')
+  t = t.replace(/\{color(:[^}]*)?\}/g, '')
+  t = t.replace(/\{\{([^}]*)\}\}/g, '$1')                                  // {{monospace}}
+  t = t.replace(/!([^!\s|]+)(\|[^!]*)?!/g, '[image: $1]')                 // !image.png|thumbnail!
+  t = t.replace(/\[([^\]|]+)\|(https?:\/\/[^\]|\s]+)(\|[^\]]*)?\]/g, (_, txt, url) =>
+    txt.trim() === url ? url : `[${txt.trim()}](${url})`)               // [text|url]
+  t = t.replace(/\[(https?:\/\/[^\]\s]+)\]/g, '$1')                       // [url]
+  t = t.replace(/\[~accountid:[^\]]+\]/g, '@user')
+  t = t.replace(/\\\\/g, '\n')
+  t = t.split('\n').map(line => {
+    let l = line
+    l = l.replace(/^h[1-6]\.\s*(.*)$/, '**$1**')
+    l = l.replace(/^-{4,}\s*$/, '────────')
+    l = l.replace(/^\s*([*#-]+)\s+/, (_, m) => '    '.repeat(m.length - 1) + (m.endsWith('#') ? '• ' : '• '))
+    l = l.replace(/(^|[\s(•])\*(?!\s)([^*\n]+?)\*(?=$|[\s.,:;)!?])/g, '$1**$2**')
+    l = l.replace(/(^|[\s(•])_(?!\s)([^_\n]+?)_(?=$|[\s.,:;)!?])/g, '$1$2')
+    l = l.replace(/(^|[\s(•])-(?!\s)([^-\n]+?)-(?=$|[\s.,:;)!?])/g, '$1$2')
+    return l.replace(/\*\*\s*\*\*/g, '').replace(/\s+$/, '')
+  }).join('\n')
+  return t.replace(/\n{3,}/g, '\n\n').trim()
 }

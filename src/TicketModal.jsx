@@ -3,9 +3,16 @@ import { api, newId } from './api.js'
 import FieldInput from './FieldInput.jsx'
 import { ticketKey } from './format.js'
 
+// Renders plain text with [text](url) links, **bold** and bare URLs.
 function Linkify({ text }) {
-  const parts = String(text).split(/(https?:\/\/[^\s<>()]+)/g)
-  return parts.map((p, i) => /^https?:\/\//.test(p) ? <a key={i} href={p} target="_blank" rel="noreferrer">{p}</a> : p)
+  const parts = String(text).split(/(\[[^\]\n]+\]\(https?:\/\/[^)\s]+\)|\*\*[^*\n]+\*\*|https?:\/\/[^\s<>()]+)/g)
+  return parts.map((p, i) => {
+    const md = p.match(/^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/)
+    if (md) return <a key={i} href={md[2]} target="_blank" rel="noreferrer">{md[1]}</a>
+    if (/^\*\*[^*]+\*\*$/.test(p)) return <b key={i}>{p.slice(2, -2)}</b>
+    if (/^https?:\/\//.test(p)) return <a key={i} href={p} target="_blank" rel="noreferrer">{p}</a>
+    return p
+  })
 }
 
 export default function TicketModal({ ticket, statuses, fields, templates, actions, onClose }) {

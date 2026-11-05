@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import Papa from 'papaparse'
 import { api, newId, FIELD_TYPES, COLORS } from './api.js'
-import { suggest, convert, parseComment, parseDate } from './jira.js'
+import { suggest, convert, parseComment, parseDate, jiraToText } from './jira.js'
 
 export default function ImportCsv({ statuses, fields, actions, onDone }) {
   const [rows, setRows] = useState(null)        // data rows (arrays)
@@ -45,6 +45,7 @@ export default function ImportCsv({ statuses, fields, actions, onDone }) {
   const newStatusNames = statusGroup ? [...new Set(rows.map(r => String(r[statusGroup.idx[0]] || '').trim()).filter(Boolean))]
     .filter(n => !statuses.some(s => s.name.toLowerCase() === n.toLowerCase())) : []
   const newFieldCount = groups.filter(g => g.map.kind === 'new').length
+  const checklistCount = groups.filter(g => g.map.kind === 'checklist').length
   const commentCount = rows ? groups.filter(g => g.map.kind === 'comments').reduce((n, g) => n + g.filled, 0) : 0
 
   async function runImport() {
@@ -89,6 +90,23 @@ export default function ImportCsv({ statuses, fields, actions, onDone }) {
         if (opts.length !== f.options.length) await api.update('fields', f.id, { options: opts })
       }
 
+      // 2b. checklist columns: every distinct value becomes an item; a ticket's values = ticked
+      const checklistItems = {}
+      const templatesToCreate = []
+      groups.forEach((g, i) => {
+        if (g.map.kind !== 'checklist') return
+        const items = []
+        rows.forEach(r => g.idx.forEach(x => {
+          const v = String(r[x] ?? '').trim()
+          if (v && !items.includes(v)) items.push(v)
+        }))
+        checklistItems[i] = items
+        templatesToCreate.push({ name: g.label, items })
+      })
+      const existingTpl = await api.list('checklist_templates')
+      const newTpls = templatesToCreate.filter(t => !existingTpl.some(e => e.name.toLowerCase() === t.name.toLowerCase()))
+      if (newTpls.length) await api.insert('checklist_templates', newTpls)
+
       // 3. tickets + comments
       setProgress('Creating tickets…')
       const pos = {}
@@ -102,8 +120,13 @@ export default function ImportCsv({ statuses, fields, actions, onDone }) {
         const t = { id, title, status_id: sid, position: pos[sid], description: '', custom: {}, checklists: [] }
         groups.forEach((g, i) => {
           const cells = g.idx.map(x => r[x])
-          if (g.map.kind === 'description') t.description = cells.filter(Boolean).join('\n\n')
+          if (g.map.kind === 'description') t.description = cells.filter(Boolean).map(jiraToText).join('\n\n')
           else if (g.map.kind === 'created') { const d = parseDate(cells[0]); if (d) t.created_at = d.toISOString() }
+          else if (g.map.kind === 'checklist') {
+            const ticked = new Set(cells.map(c => String(c ?? '').trim()).filter(Boolean))
+            t.checklists.push({ id: newId(), title: g.label,
+              items: checklistItems[i].map(text => ({ id: newId(), text, done: ticked.has(text) })) })
+          }
           else if (g.map.kind === 'comments') cells.forEach(c => { const pc = parseComment(c); if (pc) comments.push({ ...pc, ticket_id: id }) })
           else if (fieldFor[i]) {
             const f = fieldFor[i]
@@ -164,6 +187,7 @@ export default function ImportCsv({ statuses, fields, actions, onDone }) {
                         <option value="status">Status</option>
                         <option value="comments">Comments</option>
                         <option value="created">Created date</option>
+                        <option value="checklist">Checklist (ticked values = done)</option>
                         <option value="new">New field…</option>
                         {fields.length > 0 && <optgroup label="Existing field">
                           {fields.map(f => <option key={f.id} value={'field:' + f.id}>{f.name}</option>)}
@@ -184,6 +208,7 @@ export default function ImportCsv({ statuses, fields, actions, onDone }) {
           <div className="summary">
             Will create <b>{rows.filter(r => titleGroup && String(r[titleGroup.idx[0]] || '').trim()).length}</b> tickets,
             {' '}<b>{commentCount}</b> comments, <b>{newFieldCount}</b> new fields
+            {checklistCount > 0 && <>, <b>{checklistCount}</b> checklist{checklistCount > 1 ? 's' : ''} per ticket (also saved as a template)</>}
             {newStatusNames.length > 0 && <>, and <b>{newStatusNames.length}</b> new statuses ({newStatusNames.join(', ')})</>}.
           </div>
           <div className="row">
