@@ -178,7 +178,7 @@ function Export({ statuses, fields, tickets }) {
         return [ticketKey(t), typeOf(t).label, byId[t.parent_id] ? ticketKey(byId[t.parent_id]) : '', t.title, htmlToText(t.description), st[t.status_id] || '', t.created_at,
           ...fields.map(f => f.type === 'multiselect' ? (t.custom?.[f.id] || []).join(', ') : f.type === 'checkbox' ? String(!!t.custom?.[f.id]) : (t.custom?.[f.id] ?? '')),
           (t.checklists || []).map(l => l.title + ': ' + l.items.map(i => (i.done ? '[x] ' : '[ ] ') + i.text).join('; ')).join(' | '),
-          ...Array.from({ length: maxC }, (_, i) => cs[i] ? `${cs[i].created_at};${cs[i].author || ''};${cs[i].body}` : '')]
+          ...Array.from({ length: maxC }, (_, i) => cs[i] ? `${cs[i].created_at};${cs[i].author || ''};${htmlToText(cs[i].body)}` : '')]
       })
       const blob = new Blob([Papa.unparse([header, ...rows])], { type: 'text/csv' })
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob)

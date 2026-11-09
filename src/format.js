@@ -47,3 +47,22 @@ export function matches(t, q, fields) {
     ...fields.map(f => displayValue(f, t.custom?.[f.id]))].join(' ').toLowerCase()
   return hay.includes(q)
 }
+
+// Jira-style link types. A link is stored once (from -> to); each side reads it differently.
+export const LINK_TYPES = [
+  { value: 'relates', out: 'relates to', in: 'relates to' },
+  { value: 'blocks', out: 'blocks', in: 'is blocked by' },
+  { value: 'duplicates', out: 'duplicates', in: 'is duplicated by' },
+  { value: 'clones', out: 'clones', in: 'is cloned by' },
+]
+// options for the "link" dropdown: each direction as its own choice
+export const LINK_CHOICES = LINK_TYPES.flatMap(t => t.out === t.in
+  ? [{ id: t.value + ':out', label: t.out, type: t.value, dir: 'out' }]
+  : [{ id: t.value + ':out', label: t.out, type: t.value, dir: 'out' }, { id: t.value + ':in', label: t.in, type: t.value, dir: 'in' }])
+export function mapLinkType(name) {
+  const s = String(name || '').toLowerCase()
+  if (s.includes('block')) return 'blocks'
+  if (s.includes('dupl')) return 'duplicates'
+  if (s.includes('clon')) return 'clones'
+  return 'relates'
+}

@@ -22,6 +22,7 @@ const DEFAULTS = {
   fields: { options: [], show_on_card: false, position: 0 },
   tickets: { description: '', position: 0, custom: {}, checklists: [], work_type: 'project', parent_id: null },
   settings: { key_prefix: 'PRJ' },
+  ticket_links: { link_type: 'relates' },
   comments: {},
   checklist_templates: { items: [], auto_apply: false },
 }
@@ -55,6 +56,7 @@ const local = {
     if (table === 'tickets') {
       db.comments = (db.comments || []).filter(c => c.ticket_id !== id)
       db.tickets.forEach(t => { if (t.parent_id === id) t.parent_id = null })
+      db.ticket_links = (db.ticket_links || []).filter(l => l.from_id !== id && l.to_id !== id)
     }
     if (table === 'statuses') (db.tickets || []).forEach(t => { if (t.status_id === id) t.status_id = null })
     saveDb(db)

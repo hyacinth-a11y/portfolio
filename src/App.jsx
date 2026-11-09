@@ -61,12 +61,13 @@ function Workspace({ session }) {
   const load = useCallback(async () => {
     try {
       let [statuses, fields, tickets, templates, settingsRows] = await Promise.all([
-        api.list('statuses'), api.list('fields'), api.list('tickets'), api.list('checklist_templates'), api.list('settings'),
+        api.list('statuses'), api.list('fields'), api.list('tickets'), api.list('checklist_templates'), api.list('settings').catch(() => []),
       ])
+      const links = await api.list('ticket_links').catch(() => [])
       if (statuses.length === 0) {
         statuses = await api.insert('statuses', DEFAULT_STATUSES.map((s, i) => ({ ...s, position: i })))
       }
-      setData({ statuses, fields, tickets, templates, settings: settingsRows[0] || null })
+      setData({ statuses, fields, tickets, templates, settings: settingsRows[0] || null, links })
     } catch (e) { setError(e.message || String(e)) }
   }, [])
   useEffect(() => { load() }, [load])
@@ -97,8 +98,16 @@ function Workspace({ session }) {
       setData(d => ({ ...d, tickets: d.tickets.map(t => t.id === id ? { ...t, ...patch } : t) }))
       try { await api.update('tickets', id, patch) } catch (e) { setError(e.message); load() }
     },
+    async addLink(from_id, to_id, link_type) {
+      const l = await api.insertOne('ticket_links', { from_id, to_id, link_type })
+      setData(d => ({ ...d, links: [...d.links, l] }))
+    },
+    async removeLink(id) {
+      setData(d => ({ ...d, links: d.links.filter(l => l.id !== id) }))
+      await api.remove('ticket_links', id)
+    },
     async deleteTicket(id) {
-      setData(d => ({ ...d, tickets: d.tickets.filter(t => t.id !== id).map(t => t.parent_id === id ? { ...t, parent_id: null } : t) }))
+      setData(d => ({ ...d, links: d.links.filter(l => l.from_id !== id && l.to_id !== id), tickets: d.tickets.filter(t => t.id !== id).map(t => t.parent_id === id ? { ...t, parent_id: null } : t) }))
       await api.remove('tickets', id)
     },
     async saveRow(table, key, row) {
@@ -151,7 +160,7 @@ function Workspace({ session }) {
       {view === 'settings' && <Settings settings={data.settings} statuses={statuses} fields={fields} templates={data.templates} tickets={data.tickets} actions={actions} />}
       {view === 'import' && <ImportCsv statuses={statuses} fields={fields} tickets={data.tickets} settings={data.settings} actions={actions} onDone={() => { load(); setView('board') }} />}
       {openTicket && (
-        <TicketModal ticket={openTicket} tickets={data.tickets} onOpen={setOpenId} statuses={statuses} fields={fields} templates={data.templates}
+        <TicketModal ticket={openTicket} tickets={data.tickets} links={data.links} onOpen={setOpenId} statuses={statuses} fields={fields} templates={data.templates}
           actions={actions} onClose={() => setOpenId(null)} />
       )}
     </div>

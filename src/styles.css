@@ -243,3 +243,14 @@ h3, h4 { color: var(--text); }
 .unlink { opacity: 0; color: var(--muted); padding: 0 4px; }
 .child-row:hover .unlink { opacity: 1; }
 .children { overflow: visible; } .child-add { position: relative; }
+
+/* links & comments */
+.link-add { display: flex; gap: 6px; align-items: flex-start; margin-bottom: 8px; position: relative; }
+.link-add > select { width: auto; flex: none; }
+.link-add .picker-list { position: absolute; left: 0; right: 0; z-index: 15; box-shadow: 0 8px 24px rgba(9,30,66,.15); }
+.links .link-label { padding: 6px 10px 2px; font-weight: 600; }
+.comment-placeholder { border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; color: var(--muted); cursor: text; }
+.comment-placeholder:hover { background: var(--hover); }
+.comment-body { white-space: normal; }
+.comment-body .rich .tiptap p:last-child { margin-bottom: 0; }
+.comment .rich-edit { margin-top: 6px; }

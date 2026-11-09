@@ -57,6 +57,8 @@ export function suggest(name, values, multiCol, existingFields) {
   if (n === 'parent key') return { kind: 'parent_key' }
   if (n === 'parent' || n === 'parent id') return { kind: 'parent_id' }
   if (n === 'issue type' || n === 'work type') return { kind: 'worktype' }
+  const lm = n.match(/^(outward|inward) issue link \((.+)\)$/)
+  if (lm) return { kind: 'link', dir: lm[1] === 'outward' ? 'out' : 'in', linkName: lm[2] }
   const existing = existingFields.find(f => f.name.toLowerCase() === n)
   if (existing) return { kind: 'field', fieldId: existing.id }
   if (!filled.length) return { kind: 'ignore' }

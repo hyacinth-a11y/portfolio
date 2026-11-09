@@ -87,6 +87,19 @@ begin
   return new;
 end; $$ language plpgsql;
 
+-- ---- v3: linked tickets, editable comments ----
+alter table comments add column if not exists edited_at timestamptz;
+create table if not exists ticket_links (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users on delete cascade,
+  from_id uuid not null references tickets on delete cascade,
+  to_id uuid not null references tickets on delete cascade,
+  link_type text not null default 'relates',   -- relates | blocks | duplicates | clones
+  created_at timestamptz not null default now()
+);
+create index if not exists ticket_links_from on ticket_links (from_id);
+create index if not exists ticket_links_to on ticket_links (to_id);
+
 -- give older tickets a key
 update tickets set key = coalesce((select key_prefix from settings st where st.user_id = tickets.user_id), 'PRJ') || '-' || number
   where key is null and number is not null;
@@ -102,11 +115,12 @@ alter table tickets enable row level security;
 alter table comments enable row level security;
 alter table checklist_templates enable row level security;
 alter table settings enable row level security;
+alter table ticket_links enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['statuses','fields','tickets','comments','checklist_templates','settings'] loop
+  foreach t in array array['statuses','fields','tickets','comments','checklist_templates','settings','ticket_links'] loop
     execute format('drop policy if exists "owner_all" on %I', t);
     execute format('create policy "owner_all" on %I for all using (user_id = auth.uid()) with check (user_id = auth.uid())', t);
   end loop;
@@ -119,6 +133,6 @@ create index if not exists comments_ticket on comments (ticket_id, created_at);
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
-    grant select, insert, update, delete on statuses, fields, tickets, comments, checklist_templates, settings to authenticated;
+    grant select, insert, update, delete on statuses, fields, tickets, comments, checklist_templates, settings, ticket_links to authenticated;
   end if;
 end $$;

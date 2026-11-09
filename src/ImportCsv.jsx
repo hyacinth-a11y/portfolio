@@ -2,7 +2,7 @@ import { useState } from 'react'
 import Papa from 'papaparse'
 import { api, newId, FIELD_TYPES, COLORS } from './api.js'
 import { suggest, convert, parseComment, parseDate, jiraToText } from './jira.js'
-import { mapWorkType, WORK_TYPES, levelOf } from './format.js'
+import { mapWorkType, WORK_TYPES, levelOf, mapLinkType } from './format.js'
 import { textToHtml } from './RichText.jsx'
 
 export default function ImportCsv({ statuses, fields, tickets: existing = [], settings, actions, onDone }) {
@@ -128,6 +128,7 @@ export default function ImportCsv({ statuses, fields, tickets: existing = [], se
       const pos = {}
       const tickets = [], comments = []
       const prefixCount = {}
+      const pendingLinks = []
       let skipped = 0
       rows.forEach(r => {
         const title = String(r[titleGroup.idx[0]] || '').trim()
@@ -146,6 +147,10 @@ export default function ImportCsv({ statuses, fields, tickets: existing = [], se
           if (g.map.kind === 'worktype') { if (String(cells[0] || '').trim()) t.work_type = mapWorkType(cells[0]) }
           else if (g.map.kind === 'jira_id') { if (cells[0]) t.jira_id = String(cells[0]).trim() }
           else if (g.map.kind === 'parent_key') { if (cells[0]) t._parentKey = String(cells[0]).trim().toUpperCase() }
+          else if (g.map.kind === 'link') {
+            const keys = cells.flatMap(c => String(c || '').split(/[,\s]+/)).map(k => k.trim().toUpperCase()).filter(Boolean)
+            keys.forEach(k => pendingLinks.push({ id, key: k, dir: g.map.dir || 'out', type: mapLinkType(g.map.linkName || g.label) }))
+          }
           else if (g.map.kind === 'parent_id') { if (cells[0]) t._parentJira = String(cells[0]).trim() }
           else if (g.map.kind === 'description') t.description = textToHtml(cells.filter(Boolean).map(jiraToText).join('\n\n'))
           else if (g.map.kind === 'created') { const d = parseDate(cells[0]); if (d) t.created_at = d.toISOString() }
@@ -188,8 +193,22 @@ export default function ImportCsv({ statuses, fields, tickets: existing = [], se
         setProgress(`Adding comments… ${Math.min(i + 200, comments.length)}/${comments.length}`)
         await api.insert('comments', comments.slice(i, i + 200))
       }
+      // 4. issue links (Jira lists each link on both tickets, so de-duplicate)
+      let linkCount = 0
+      if (pendingLinks.length) {
+        setProgress('Linking tickets…')
+        const seen = new Set(), rowsOut = []
+        pendingLinks.forEach(pl => {
+          const other = byKey[pl.key]; if (!other || other.id === pl.id) return
+          const [from_id, to_id] = pl.dir === 'out' ? [pl.id, other.id] : [other.id, pl.id]
+          const sig = pl.type === 'relates' ? [pl.type, ...[from_id, to_id].sort()].join('|') : [pl.type, from_id, to_id].join('|')
+          if (seen.has(sig)) return; seen.add(sig)
+          rowsOut.push({ from_id, to_id, link_type: pl.type })
+        })
+        try { await api.insert('ticket_links', rowsOut); linkCount = rowsOut.length } catch (e) { console.warn('links skipped', e) }
+      }
       setProgress('')
-      alert(`Imported ${tickets.length} tickets (${nested} nested under a parent), ${comments.length} comments, ${toCreate.length} new fields, ${newStatusNames.length} new statuses.` +
+      alert(`Imported ${tickets.length} tickets (${nested} nested under a parent), ${comments.length} comments, ${linkCount} links, ${toCreate.length} new fields, ${newStatusNames.length} new statuses.` +
         (skipped ? `\nSkipped ${skipped} already on your board.` : '') +
         (badNest ? `\n${badNest} couldn't be nested because the parent is the same or a lower level.` : ''))
       onDone()
@@ -239,6 +258,7 @@ export default function ImportCsv({ statuses, fields, tickets: existing = [], se
                         <option value="jira_id">Jira issue id (for nesting)</option>
                         <option value="parent_key">Parent key (for nesting)</option>
                         <option value="parent_id">Parent id (for nesting)</option>
+                        <option value="link">Issue link (links tickets)</option>
                         <option value="new">New field…</option>
                         {fields.length > 0 && <optgroup label="Existing field">
                           {fields.map(f => <option key={f.id} value={'field:' + f.id}>{f.name}</option>)}

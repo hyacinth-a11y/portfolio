@@ -3,7 +3,7 @@ import { api, newId } from './api.js'
 import FieldInput from './FieldInput.jsx'
 import TicketPicker from './TicketPicker.jsx'
 import { RichEditor, RichView } from './RichText.jsx'
-import { ticketKey, WORK_TYPES, typeOf, levelOf, descendants } from './format.js'
+import { ticketKey, WORK_TYPES, typeOf, levelOf, descendants, LINK_TYPES, LINK_CHOICES } from './format.js'
 
 // Renders plain text with [text](url) links, **bold** and bare URLs.
 function Linkify({ text }) {
@@ -17,7 +17,7 @@ function Linkify({ text }) {
   })
 }
 
-export default function TicketModal({ ticket, tickets, onOpen, statuses, fields, templates, actions, onClose }) {
+export default function TicketModal({ ticket, tickets, links = [], onOpen, statuses, fields, templates, actions, onClose }) {
   const [childTitle, setChildTitle] = useState('')
   const wt = typeOf(ticket)
   const byId = Object.fromEntries(tickets.map(t => [t.id, t]))
@@ -26,7 +26,7 @@ export default function TicketModal({ ticket, tickets, onOpen, statuses, fields,
   const [childType, setChildType] = useState(null)
   const [parentPicker, setParentPicker] = useState(false)
   const [childMode, setChildMode] = useState('create') // create | existing
-  useEffect(() => { setParentPicker(false); setChildMode('create') }, [ticket.id])
+  useEffect(() => { setParentPicker(false); setChildMode('create'); setComposing(false); setEditingComment(null); setLinking(false) }, [ticket.id])
   const childCandidates = tickets.filter(t => t.id !== ticket.id && t.parent_id !== ticket.id && levelOf(t) > wt.level)
   const chosenChildType = lowerTypes.find(w => w.value === childType) || lowerTypes[0]
   // breadcrumb: parent chain
@@ -58,7 +58,10 @@ export default function TicketModal({ ticket, tickets, onOpen, statuses, fields,
   const [title, setTitle] = useState(ticket.title)
   const [editDesc, setEditDesc] = useState(false)
   const [comments, setComments] = useState(null)
-  const [newComment, setNewComment] = useState('')
+  const [composing, setComposing] = useState(false)
+  const [editingComment, setEditingComment] = useState(null)
+  const [linking, setLinking] = useState(false)
+  const [linkChoice, setLinkChoice] = useState(LINK_CHOICES[0].id)
 
   useEffect(() => { setTitle(ticket.title); setEditDesc(false) }, [ticket.id])
   useEffect(() => {
@@ -79,11 +82,35 @@ export default function TicketModal({ ticket, tickets, onOpen, statuses, fields,
   }
   const addOption = (field, o) => actions.saveRow('fields', 'fields', { ...field, options: [...field.options, o] })
 
-  async function addComment(e) {
-    e.preventDefault()
-    if (!newComment.trim()) return
-    const c = await api.insertOne('comments', { ticket_id: ticket.id, body: newComment.trim() })
-    setComments(cs => [...cs, c]); setNewComment('')
+  async function addComment(html) {
+    setComposing(false)
+    if (!html) return
+    const c = await api.insertOne('comments', { ticket_id: ticket.id, body: html })
+    setComments(cs => [...cs, c])
+  }
+  async function saveComment(id, html) {
+    setEditingComment(null)
+    if (!html) return
+    const edited_at = new Date().toISOString()
+    setComments(cs => cs.map(c => c.id === id ? { ...c, body: html, edited_at } : c))
+    try { await api.update('comments', id, { body: html, edited_at }) }
+    catch { await api.update('comments', id, { body: html }) } // database not upgraded yet
+  }
+
+  // linked tickets, grouped by how they read from this ticket
+  const myLinks = links.filter(l => l.from_id === ticket.id || l.to_id === ticket.id).map(l => {
+    const out = l.from_id === ticket.id
+    const lt = LINK_TYPES.find(x => x.value === l.link_type) || LINK_TYPES[0]
+    return { ...l, other: byId[out ? l.to_id : l.from_id], label: out ? lt.out : lt.in }
+  }).filter(l => l.other)
+  const linkGroups = [...new Set(myLinks.map(l => l.label))].map(label => [label, myLinks.filter(l => l.label === label)])
+  const linkedIds = new Set(myLinks.map(l => l.other.id))
+  const linkCandidates = tickets.filter(t => t.id !== ticket.id && !linkedIds.has(t.id))
+  function addLink(other) {
+    const ch = LINK_CHOICES.find(c => c.id === linkChoice)
+    if (ch.dir === 'out') actions.addLink(ticket.id, other.id, ch.type)
+    else actions.addLink(other.id, ticket.id, ch.type)
+    setLinking(false)
   }
   async function delComment(id) {
     setComments(cs => cs.filter(c => c.id !== id))
@@ -192,6 +219,41 @@ export default function TicketModal({ ticket, tickets, onOpen, statuses, fields,
             </>}
 
             <div className="section-head">
+              <h4>Linked work items <span className="muted small">{myLinks.length || ''}</span></h4>
+              {!linking && <button className="ghost small" onClick={() => setLinking(true)}>+ Link ticket</button>}
+            </div>
+            {linking && (
+              <div className="link-add">
+                <select value={linkChoice} onChange={e => setLinkChoice(e.target.value)}>
+                  {LINK_CHOICES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                </select>
+                <TicketPicker candidates={linkCandidates} onPick={addLink} onClose={() => setLinking(false)}
+                  placeholder="Search tickets by key or name…" />
+                <button className="ghost" onClick={() => setLinking(false)}>Cancel</button>
+              </div>
+            )}
+            {linkGroups.length > 0 && (
+              <div className="children links">
+                {linkGroups.map(([label, ls]) => (
+                  <div key={label}>
+                    <div className="link-label muted small">{label}</div>
+                    {ls.map(l => (
+                      <div key={l.id} className="child-row" onClick={() => onOpen(l.other.id)}>
+                        <span style={{ color: typeOf(l.other).color }} title={typeOf(l.other).label}>{typeOf(l.other).icon}</span>
+                        <span className="key">{ticketKey(l.other)}</span>
+                        <span className="child-title">{l.other.title}</span>
+                        <span className="pill status-pill">{statusName(l.other.status_id)}</span>
+                        <button className="link small unlink" title="Remove link"
+                          onClick={e => { e.stopPropagation(); actions.removeLink(l.id) }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+            {!linking && myLinks.length === 0 && <p className="muted small">No linked tickets.</p>}
+
+            <div className="section-head">
               <h4>Checklists</h4>
               <select value="" onChange={e => { addList(e.target.value === 'blank' ? null : e.target.value); e.target.value = '' }}>
                 <option value="">+ Add checklist</option>
@@ -208,19 +270,22 @@ export default function TicketModal({ ticket, tickets, onOpen, statuses, fields,
                 { name: l.title, items: l.items.map(i => i.text) }).then(() => alert('Saved as template'))} />)}
 
             <h4>Comments</h4>
-            <form onSubmit={addComment} className="comment-form">
-              <textarea rows={2} placeholder="Add a comment…" value={newComment} onChange={e => setNewComment(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addComment(e) }} />
-              {newComment.trim() && <button className="primary" type="submit">Save</button>}
-            </form>
+            {composing
+              ? <RichEditor html="" placeholder="Add a comment…" onSave={addComment} onCancel={() => setComposing(false)} />
+              : <div className="comment-placeholder" onClick={() => setComposing(true)}>Add a comment…</div>}
             {comments === null ? <p className="muted">Loading…</p> : [...comments].reverse().map(c => (
               <div key={c.id} className="comment">
                 <div className="comment-meta">
                   <b>{c.author || 'You'}</b>
-                  <span className="muted small">{new Date(c.created_at).toLocaleString()}</span>
-                  <button className="link small" onClick={() => delComment(c.id)}>Delete</button>
+                  <span className="muted small">{new Date(c.created_at).toLocaleString()}{c.edited_at && ' · edited'}</span>
+                  {editingComment !== c.id && <>
+                    <button className="link small" onClick={() => setEditingComment(c.id)}>Edit</button>
+                    <button className="link small" onClick={() => confirm('Delete this comment?') && delComment(c.id)}>Delete</button>
+                  </>}
                 </div>
-                <div className="comment-body"><Linkify text={c.body} /></div>
+                {editingComment === c.id
+                  ? <RichEditor html={c.body} placeholder="Edit comment…" onSave={html => saveComment(c.id, html)} onCancel={() => setEditingComment(null)} />
+                  : <div className="comment-body"><RichView html={c.body} /></div>}
               </div>
             ))}
           </div>
