@@ -48,6 +48,22 @@ export function matches(t, q, fields) {
   return hay.includes(q)
 }
 
+// Priority levels, highest first (Jira-style arrows)
+export const PRIORITIES = [
+  { value: 'highest', label: 'Highest', icon: '⇈', color: '#c9372c' },
+  { value: 'high', label: 'High', icon: '↑', color: '#e5622e' },
+  { value: 'medium', label: 'Medium', icon: '=', color: '#e8922e' },
+  { value: 'low', label: 'Low', icon: '↓', color: '#2d5a7b' },
+]
+export const priorityOf = t => PRIORITIES.find(p => p.value === t?.priority) || PRIORITIES[3]
+export function mapPriority(v) {
+  const s = String(v || '').toLowerCase()
+  if (/highest|critical|blocker|urgent|p0/.test(s)) return 'highest'
+  if (/high|major|p1/.test(s)) return 'high'
+  if (/medium|normal|p2/.test(s)) return 'medium'
+  return 'low'
+}
+
 // Jira-style link types. A link is stored once (from -> to); each side reads it differently.
 export const LINK_TYPES = [
   { value: 'relates', out: 'relates to', in: 'relates to' },

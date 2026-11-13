@@ -3,7 +3,7 @@ import { api, newId } from './api.js'
 import FieldInput from './FieldInput.jsx'
 import TicketPicker from './TicketPicker.jsx'
 import { RichEditor, RichView } from './RichText.jsx'
-import { ticketKey, WORK_TYPES, typeOf, levelOf, descendants, LINK_TYPES, LINK_CHOICES } from './format.js'
+import { ticketKey, WORK_TYPES, typeOf, levelOf, descendants, LINK_TYPES, LINK_CHOICES, PRIORITIES, priorityOf } from './format.js'
 
 // Renders plain text with [text](url) links, **bold** and bare URLs.
 function Linkify({ text }) {
@@ -17,7 +17,7 @@ function Linkify({ text }) {
   })
 }
 
-export default function TicketModal({ ticket, tickets, links = [], onOpen, statuses, fields, templates, actions, onClose }) {
+export default function TicketModal({ ticket, tickets, links = [], descTemplates = [], onOpen, statuses, fields, templates, actions, onClose }) {
   const [childTitle, setChildTitle] = useState('')
   const wt = typeOf(ticket)
   const byId = Object.fromEntries(tickets.map(t => [t.id, t]))
@@ -170,13 +170,20 @@ export default function TicketModal({ ticket, tickets, links = [], onOpen, statu
 
             <h4>Description</h4>
             {editDesc ? (
-              <RichEditor html={ticket.description || ''}
+              <RichEditor html={ticket.description || ''} templates={descTemplates}
+                onSaveTemplate={(name, body) => actions.saveRow('description_templates', 'descTemplates', { name, body }).then(() => alert(`Saved template "${name}"`))}
                 onSave={html => { upd({ description: html }); setEditDesc(false) }}
                 onCancel={() => setEditDesc(false)} />
             ) : (
               <div className={'desc' + (ticket.description ? '' : ' empty')} title="Click to edit"
                 onClick={e => { if (!e.target.closest('a') && !e.target.closest('input')) setEditDesc(true) }}>
                 {ticket.description ? <RichView html={ticket.description} /> : 'Add a description…'}
+              </div>
+            )}
+            {!editDesc && !ticket.description && descTemplates.length > 0 && (
+              <div className="tpl-quick small">
+                <span className="muted">Start from a template:</span>
+                {descTemplates.map(t => <button key={t.id} className="chip" onClick={() => upd({ description: t.body })}>{t.name}</button>)}
               </div>
             )}
 
@@ -291,6 +298,13 @@ export default function TicketModal({ ticket, tickets, links = [], onOpen, statu
           </div>
 
           <aside className="side-col">
+            <label className="field">
+              <span>Priority</span>
+              <select value={priorityOf(ticket).value} onChange={e => upd({ priority: e.target.value })}
+                style={{ color: priorityOf(ticket).color, fontWeight: 600 }}>
+                {PRIORITIES.map(p => <option key={p.value} value={p.value}>{p.icon}  {p.label}</option>)}
+              </select>
+            </label>
             <label className="field">
               <span>Work type</span>
               <select value={wt.value} onChange={e => changeType(e.target.value)}>

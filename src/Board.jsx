@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { displayValue, ticketKey, checklistProgress, matches, WORK_TYPES, typeOf } from './format.js'
+import { displayValue, ticketKey, checklistProgress, matches, WORK_TYPES, typeOf, PRIORITIES, priorityOf } from './format.js'
 import { COLORS } from './api.js'
 
 export default function Board({ statuses, fields, tickets, actions, onOpen }) {
@@ -32,6 +32,8 @@ export default function Board({ statuses, fields, tickets, actions, onOpen }) {
   const [newTitle, setNewTitle] = useState('')
   const [newCol, setNewCol] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
+  const [prioFilter, setPrioFilter] = useState(() => new Set()) // empty = all
+  const togglePrio = v => setPrioFilter(prev => { const n = new Set(prev); n.has(v) ? n.delete(v) : n.add(v); return n })
   const [newType, setNewType] = useState('project')
   const byId = Object.fromEntries(tickets.map(t => [t.id, t]))
   const childCount = {}
@@ -39,7 +41,7 @@ export default function Board({ statuses, fields, tickets, actions, onOpen }) {
 
   const cardFields = fields.filter(f => f.show_on_card)
   const colTickets = sid => tickets
-    .filter(t => (t.status_id ?? statuses[0]?.id) === sid && matches(t, q, fields) && (typeFilter === 'all' || typeOf(t).value === typeFilter))
+    .filter(t => (t.status_id ?? statuses[0]?.id) === sid && matches(t, q, fields) && (typeFilter === 'all' || typeOf(t).value === typeFilter) && (prioFilter.size === 0 || prioFilter.has(priorityOf(t).value)))
     .sort((a, b) => a.position - b.position)
 
   function drop(statusId, beforeId) {
@@ -83,6 +85,16 @@ export default function Board({ statuses, fields, tickets, actions, onOpen }) {
             <button key={w.value} className={'chip' + (typeFilter === w.value ? ' on' : '')} onClick={() => setTypeFilter(w.value)}>
               {w.icon && <span style={{ color: w.color }}>{w.icon} </span>}{w.label}
               <span className="muted"> {w.value === 'all' ? tickets.length : tickets.filter(t => typeOf(t).value === w.value).length}</span>
+            </button>
+          ))}
+        </div>
+        <div className="type-filter prio-filter">
+          <span className="muted small">Priority:</span>
+          <button className={'chip' + (prioFilter.size === 0 ? ' on' : '')} onClick={() => setPrioFilter(new Set())}>All</button>
+          {PRIORITIES.map(p => (
+            <button key={p.value} className={'chip' + (prioFilter.has(p.value) ? ' on' : '')} onClick={() => togglePrio(p.value)}>
+              <span style={{ color: p.color, fontWeight: 700 }}>{p.icon} </span>{p.label}
+              <span className="muted"> {tickets.filter(t => priorityOf(t).value === p.value).length}</span>
             </button>
           ))}
         </div>
@@ -139,7 +151,8 @@ export default function Board({ statuses, fields, tickets, actions, onOpen }) {
                         return v ? <div key={f.id} className="card-field"><span className="muted">{f.type === 'checkbox' ? '' : f.name + ': '}</span>{v}</div> : null
                       })}
                       <div className="ticket-foot">
-                        <span className="key"><span className="type-icon" style={{ color: wt.color }} title={wt.label}>{wt.icon}</span> {ticketKey(t)}</span>
+                        <span className="key"><span className="type-icon" style={{ color: wt.color }} title={wt.label}>{wt.icon}</span> {ticketKey(t)}
+                          <span className="prio-icon" style={{ color: priorityOf(t).color }} title={'Priority: ' + priorityOf(t).label}>{priorityOf(t).icon}</span></span>
                         <span className="foot-right">
                           {childCount[t.id] > 0 && <span className="muted" title="Child items">⑂ {childCount[t.id]}</span>}
                           {prog && <span className={'prog' + (prog.done === prog.total ? ' full' : '')}>☑ {prog.done}/{prog.total}</span>}

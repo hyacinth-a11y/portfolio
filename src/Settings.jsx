@@ -1,15 +1,15 @@
 import { useState } from 'react'
 import Papa from 'papaparse'
 import { api, FIELD_TYPES, COLORS } from './api.js'
-import { displayValue, ticketKey, typeOf } from './format.js'
-import { htmlToText } from './RichText.jsx'
+import { displayValue, ticketKey, typeOf, WORK_TYPES, priorityOf } from './format.js'
+import { htmlToText, RichEditor, RichView } from './RichText.jsx'
 
-export default function Settings({ settings, statuses, fields, templates, tickets, actions }) {
+export default function Settings({ settings, statuses, fields, templates, descTemplates = [], tickets, actions }) {
   const [tab, setTab] = useState('general')
   return (
     <main className="settings">
       <div className="subtabs">
-        {[['general', 'General'], ['statuses', 'Statuses'], ['fields', 'Fields'], ['templates', 'Checklist templates'], ['data', 'Export']].map(([k, l]) => (
+        {[['general', 'General'], ['statuses', 'Statuses'], ['fields', 'Fields'], ['templates', 'Checklist templates'], ['desc', 'Description templates'], ['data', 'Export']].map(([k, l]) => (
           <button key={k} className={tab === k ? 'tab on' : 'tab'} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
@@ -17,6 +17,7 @@ export default function Settings({ settings, statuses, fields, templates, ticket
       {tab === 'statuses' && <Statuses statuses={statuses} tickets={tickets} actions={actions} />}
       {tab === 'fields' && <Fields fields={fields} actions={actions} />}
       {tab === 'templates' && <Templates templates={templates} actions={actions} />}
+      {tab === 'desc' && <DescTemplates templates={descTemplates} actions={actions} />}
       {tab === 'data' && <Export statuses={statuses} fields={fields} tickets={tickets} />}
     </main>
   )
@@ -128,6 +129,53 @@ function Fields({ fields, actions }) {
   )
 }
 
+function DescTemplates({ templates, actions }) {
+  const [editing, setEditing] = useState(null) // template id or 'new'
+  const [name, setName] = useState('')
+  const save = row => actions.saveRow('description_templates', 'descTemplates', row)
+  return (
+    <section className="card wide">
+      <h3>Description templates <span className="muted small">— insert them from “Template” when editing a description</span></h3>
+      {templates.length === 0 && editing !== 'new' && <p className="muted">No description templates yet.</p>}
+      {templates.map(t => (
+        <div className="field-def" key={t.id}>
+          <div className="set-row">
+            <input className="strong" defaultValue={t.name} onBlur={e => e.target.value.trim() && e.target.value !== t.name && save({ id: t.id, name: e.target.value.trim() })} />
+            <label className="inline small">Use for new
+              <select value={t.work_type || ''} onChange={e => {
+                const wt = e.target.value || null
+                // only one default per work type
+                if (wt) templates.filter(x => x.id !== t.id && x.work_type === wt).forEach(x => save({ id: x.id, work_type: null }))
+                save({ id: t.id, work_type: wt })
+              }}>
+                <option value="">— not automatic —</option>
+                {WORK_TYPES.map(w => <option key={w.value} value={w.value}>{w.label} tickets</option>)}
+              </select>
+            </label>
+            {editing !== t.id && <button className="ghost" onClick={() => setEditing(t.id)}>Edit</button>}
+            <button className="ghost danger" onClick={() => confirm(`Delete template "${t.name}"?`) && actions.deleteRow('description_templates', 'descTemplates', t.id)}>Delete</button>
+          </div>
+          <div className="options">
+            {editing === t.id
+              ? <RichEditor html={t.body} placeholder="Template content…" onSave={body => { save({ id: t.id, body }); setEditing(null) }} onCancel={() => setEditing(null)} />
+              : <div className="tpl-preview">{t.body ? <RichView html={t.body} /> : <span className="muted">Empty</span>}</div>}
+          </div>
+        </div>
+      ))}
+      {editing === 'new' ? (
+        <div className="field-def">
+          <div className="set-row"><input autoFocus placeholder="Template name (e.g. Project kickoff brief)" value={name} onChange={e => setName(e.target.value)} /></div>
+          <div className="options">
+            <RichEditor html="" placeholder="Write the template: headings, bullets, placeholders like “Budget: ___”…"
+              onSave={body => { if (!name.trim()) return alert('Give the template a name first.'); save({ name: name.trim(), body }); setName(''); setEditing(null) }}
+              onCancel={() => { setName(''); setEditing(null) }} />
+          </div>
+        </div>
+      ) : <button className="primary" onClick={() => setEditing('new')}>+ New description template</button>}
+    </section>
+  )
+}
+
 function Templates({ templates, actions }) {
   const [draft, setDraft] = useState({ name: '', items: '' })
   const save = row => actions.saveRow('checklist_templates', 'templates', row)
@@ -171,11 +219,11 @@ function Export({ statuses, fields, tickets }) {
       const st = Object.fromEntries(statuses.map(s => [s.id, s.name]))
       const maxC = Math.max(0, ...tickets.map(t => comments.filter(c => c.ticket_id === t.id).length))
       const byId = Object.fromEntries(tickets.map(t => [t.id, t]))
-      const header = ['Issue key', 'Work type', 'Parent key', 'Title', 'Description', 'Status', 'Created', ...fields.map(f => f.name), 'Checklists',
+      const header = ['Issue key', 'Work type', 'Priority', 'Parent key', 'Title', 'Description', 'Status', 'Created', ...fields.map(f => f.name), 'Checklists',
         ...Array.from({ length: maxC }, () => 'Comment')]
       const rows = [...tickets].sort((a, b) => (a.number || 0) - (b.number || 0)).map(t => {
         const cs = comments.filter(c => c.ticket_id === t.id).sort((a, b) => a.created_at.localeCompare(b.created_at))
-        return [ticketKey(t), typeOf(t).label, byId[t.parent_id] ? ticketKey(byId[t.parent_id]) : '', t.title, htmlToText(t.description), st[t.status_id] || '', t.created_at,
+        return [ticketKey(t), typeOf(t).label, priorityOf(t).label, byId[t.parent_id] ? ticketKey(byId[t.parent_id]) : '', t.title, htmlToText(t.description), st[t.status_id] || '', t.created_at,
           ...fields.map(f => f.type === 'multiselect' ? (t.custom?.[f.id] || []).join(', ') : f.type === 'checkbox' ? String(!!t.custom?.[f.id]) : (t.custom?.[f.id] ?? '')),
           (t.checklists || []).map(l => l.title + ': ' + l.items.map(i => (i.done ? '[x] ' : '[ ] ') + i.text).join('; ')).join(' | '),
           ...Array.from({ length: maxC }, (_, i) => cs[i] ? `${cs[i].created_at};${cs[i].author || ''};${htmlToText(cs[i].body)}` : '')]

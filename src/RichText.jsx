@@ -85,7 +85,7 @@ export function RichView({ html }) {
 }
 
 /* ---------- editor with toolbar ---------- */
-export function RichEditor({ html, onSave, onCancel, placeholder = 'Add a description…' }) {
+export function RichEditor({ html, onSave, onCancel, placeholder = 'Add a description…', templates, onSaveTemplate }) {
   const editor = useEditor({
     extensions: extensions(placeholder),
     content: textToHtml(html),
@@ -152,6 +152,25 @@ export function RichEditor({ html, onSave, onCancel, placeholder = 'Add a descri
         <span className="sep" />
         <B title="Undo (Ctrl+Z)" run={() => c().undo().run()}>↶</B>
         <B title="Redo (Ctrl+Shift+Z)" run={() => c().redo().run()}>↷</B>
+        {templates && <>
+          <span className="sep" />
+          <select className="tpl-select" value="" title="Insert a description template"
+            onChange={e => {
+              const t = templates.find(x => x.id === e.target.value); e.target.value = ''
+              if (!t) return
+              if (editor.isEmpty) editor.commands.setContent(textToHtml(t.body))
+              else c().insertContent(textToHtml(t.body)).run()
+              editor.commands.focus()
+            }}>
+            <option value="">{templates.length ? 'Template ▾' : 'No templates yet'}</option>
+            {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </>}
+        {onSaveTemplate && <B title="Save this text as a reusable template" run={() => {
+          if (editor.isEmpty) return alert('Write something first, then save it as a template.')
+          const name = window.prompt('Template name')
+          if (name && name.trim()) onSaveTemplate(name.trim(), editor.getHTML())
+        }}>Save as template</B>}
       </div>
       <EditorContent editor={editor} className="rich editable" />
       <div className="row">

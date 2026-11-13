@@ -2,7 +2,7 @@ import { useState } from 'react'
 import Papa from 'papaparse'
 import { api, newId, FIELD_TYPES, COLORS } from './api.js'
 import { suggest, convert, parseComment, parseDate, jiraToText } from './jira.js'
-import { mapWorkType, WORK_TYPES, levelOf, mapLinkType } from './format.js'
+import { mapWorkType, WORK_TYPES, levelOf, mapLinkType, mapPriority } from './format.js'
 import { textToHtml } from './RichText.jsx'
 
 export default function ImportCsv({ statuses, fields, tickets: existing = [], settings, actions, onDone }) {
@@ -30,10 +30,12 @@ export default function ImportCsv({ statuses, fields, tickets: existing = [], se
           return { name, label, idx, filled: filled.length, sample: filled.slice(0, 3), map: suggest(label, values, idx.length > 1, fields) }
         })
         // empty columns are skipped; one-of-a-kind roles (title, status, key…) go to the first matching column only
-        const SINGLE = ['title', 'description', 'status', 'created', 'key', 'worktype', 'jira_id', 'parent_key', 'parent_id']
+        const SINGLE = ['title', 'description', 'status', 'created', 'key', 'worktype', 'priority', 'jira_id', 'parent_key', 'parent_id']
         const seen = new Set()
         gs.forEach(g => {
           if (!g.filled) { g.map = { kind: 'ignore' }; return }
+          // a Priority column with the same value on every row (e.g. Jira's default "Medium") carries no info -> keep the app default (Low)
+          if (g.map.kind === 'priority' && g.filled === data.length && new Set(data.map(r => String(r[g.idx[0]] ?? '').trim())).size === 1) g.map = { kind: 'ignore' }
           if (SINGLE.includes(g.map.kind)) { if (seen.has(g.map.kind)) g.map = { kind: 'ignore' }; else seen.add(g.map.kind) }
         })
         if (!gs.some(g => g.map.kind === 'title')) {
@@ -138,13 +140,14 @@ export default function ImportCsv({ statuses, fields, tickets: existing = [], se
         const id = newId()
         const sid = statusGroup ? statusId(r[statusGroup.idx[0]]) : allStatuses[0].id
         pos[sid] = (pos[sid] || 0) + 1
-        const t = { id, title, status_id: sid, position: pos[sid], description: '', custom: {}, checklists: [], work_type: 'project', created_at: new Date().toISOString() }
+        const t = { id, title, status_id: sid, position: pos[sid], description: '', custom: {}, checklists: [], work_type: 'project', priority: 'low', created_at: new Date().toISOString() }
         const km = key.match(/^([A-Z][A-Z0-9_]*)-(\d+)$/)
         if (km) { t.key = key; t.number = +km[2]; prefixCount[km[1]] = (prefixCount[km[1]] || 0) + 1 }
         else if (key) t.key = key
         groups.forEach((g, i) => {
           const cells = g.idx.map(x => r[x])
-          if (g.map.kind === 'worktype') { if (String(cells[0] || '').trim()) t.work_type = mapWorkType(cells[0]) }
+          if (g.map.kind === 'priority') { if (String(cells[0] || '').trim()) t.priority = mapPriority(cells[0]) }
+          else if (g.map.kind === 'worktype') { if (String(cells[0] || '').trim()) t.work_type = mapWorkType(cells[0]) }
           else if (g.map.kind === 'jira_id') { if (cells[0]) t.jira_id = String(cells[0]).trim() }
           else if (g.map.kind === 'parent_key') { if (cells[0]) t._parentKey = String(cells[0]).trim().toUpperCase() }
           else if (g.map.kind === 'link') {
@@ -255,6 +258,7 @@ export default function ImportCsv({ statuses, fields, tickets: existing = [], se
                         <option value="checklist">Checklist (ticked values = done)</option>
                         <option value="key">Issue key (e.g. POC-71)</option>
                         <option value="worktype">Work type</option>
+                        <option value="priority">Priority</option>
                         <option value="jira_id">Jira issue id (for nesting)</option>
                         <option value="parent_key">Parent key (for nesting)</option>
                         <option value="parent_id">Parent id (for nesting)</option>

@@ -64,10 +64,11 @@ function Workspace({ session }) {
         api.list('statuses'), api.list('fields'), api.list('tickets'), api.list('checklist_templates'), api.list('settings').catch(() => []),
       ])
       const links = await api.list('ticket_links').catch(() => [])
+      const descTemplates = await api.list('description_templates').catch(() => [])
       if (statuses.length === 0) {
         statuses = await api.insert('statuses', DEFAULT_STATUSES.map((s, i) => ({ ...s, position: i })))
       }
-      setData({ statuses, fields, tickets, templates, settings: settingsRows[0] || null, links })
+      setData({ statuses, fields, tickets, templates, settings: settingsRows[0] || null, links, descTemplates })
     } catch (e) { setError(e.message || String(e)) }
   }, [])
   useEffect(() => { load() }, [load])
@@ -87,8 +88,11 @@ function Workspace({ session }) {
       const autoLists = data.templates.filter(t => t.auto_apply).map(t => ({
         id: newId(), title: t.name, items: t.items.map(text => ({ id: newId(), text, done: false })),
       }))
+      const workType = extra.work_type || 'project'
+      const defaultDesc = (data.descTemplates || []).find(d => d.work_type === workType)
       const t = await api.insertOne('tickets', {
-        title, status_id: statusId, checklists: autoLists, work_type: 'project', ...extra,
+        title, status_id: statusId, checklists: autoLists, work_type: 'project',
+        ...(defaultDesc ? { description: defaultDesc.body } : {}), ...extra,
         position: Math.max(0, ...inStatus.map(x => x.position)) + 1,
       })
       setData(d => ({ ...d, tickets: [...d.tickets, t] }))
@@ -157,10 +161,10 @@ function Workspace({ session }) {
         </div>
       </header>
       {view === 'board' && <Board statuses={statuses} fields={fields} tickets={data.tickets} actions={actions} onOpen={setOpenId} />}
-      {view === 'settings' && <Settings settings={data.settings} statuses={statuses} fields={fields} templates={data.templates} tickets={data.tickets} actions={actions} />}
+      {view === 'settings' && <Settings settings={data.settings} statuses={statuses} fields={fields} templates={data.templates} descTemplates={data.descTemplates} tickets={data.tickets} actions={actions} />}
       {view === 'import' && <ImportCsv statuses={statuses} fields={fields} tickets={data.tickets} settings={data.settings} actions={actions} onDone={() => { load(); setView('board') }} />}
       {openTicket && (
-        <TicketModal ticket={openTicket} tickets={data.tickets} links={data.links} onOpen={setOpenId} statuses={statuses} fields={fields} templates={data.templates}
+        <TicketModal ticket={openTicket} tickets={data.tickets} links={data.links} descTemplates={data.descTemplates} onOpen={setOpenId} statuses={statuses} fields={fields} templates={data.templates}
           actions={actions} onClose={() => setOpenId(null)} />
       )}
     </div>

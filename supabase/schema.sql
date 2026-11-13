@@ -100,6 +100,19 @@ create table if not exists ticket_links (
 create index if not exists ticket_links_from on ticket_links (from_id);
 create index if not exists ticket_links_to on ticket_links (to_id);
 
+-- ---- v4: description templates ----
+create table if not exists description_templates (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users on delete cascade,
+  name text not null,
+  body text not null default '',              -- formatted (HTML) description
+  work_type text,                              -- if set, used automatically for new tickets of this work type
+  created_at timestamptz not null default now()
+);
+
+-- ---- v5: priority ----
+alter table tickets add column if not exists priority text not null default 'low';  -- low | medium | high | highest
+
 -- give older tickets a key
 update tickets set key = coalesce((select key_prefix from settings st where st.user_id = tickets.user_id), 'PRJ') || '-' || number
   where key is null and number is not null;
@@ -116,11 +129,12 @@ alter table comments enable row level security;
 alter table checklist_templates enable row level security;
 alter table settings enable row level security;
 alter table ticket_links enable row level security;
+alter table description_templates enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['statuses','fields','tickets','comments','checklist_templates','settings','ticket_links'] loop
+  foreach t in array array['statuses','fields','tickets','comments','checklist_templates','settings','ticket_links','description_templates'] loop
     execute format('drop policy if exists "owner_all" on %I', t);
     execute format('create policy "owner_all" on %I for all using (user_id = auth.uid()) with check (user_id = auth.uid())', t);
   end loop;
@@ -133,6 +147,6 @@ create index if not exists comments_ticket on comments (ticket_id, created_at);
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
-    grant select, insert, update, delete on statuses, fields, tickets, comments, checklist_templates, settings, ticket_links to authenticated;
+    grant select, insert, update, delete on statuses, fields, tickets, comments, checklist_templates, settings, ticket_links, description_templates to authenticated;
   end if;
 end $$;

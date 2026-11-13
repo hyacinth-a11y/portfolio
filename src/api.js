@@ -20,9 +20,10 @@ function saveDb(db) { try { localStorage.setItem(LS, JSON.stringify(db)) } catch
 const DEFAULTS = {
   statuses: { color: '#6b778c', position: 0 },
   fields: { options: [], show_on_card: false, position: 0 },
-  tickets: { description: '', position: 0, custom: {}, checklists: [], work_type: 'project', parent_id: null },
+  tickets: { description: '', position: 0, custom: {}, checklists: [], work_type: 'project', parent_id: null, priority: 'low' },
   settings: { key_prefix: 'PRJ' },
   ticket_links: { link_type: 'relates' },
+  description_templates: { body: '', work_type: null },
   comments: {},
   checklist_templates: { items: [], auto_apply: false },
 }

@@ -254,3 +254,14 @@ h3, h4 { color: var(--text); }
 .comment-body { white-space: normal; }
 .comment-body .rich .tiptap p:last-child { margin-bottom: 0; }
 .comment .rich-edit { margin-top: 6px; }
+
+/* description templates */
+.toolbar-rt .tpl-select { font-weight: 600; color: var(--navy-700); }
+.tpl-quick { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.tpl-quick .chip { cursor: pointer; }
+.tpl-preview { border: 1px dashed var(--border); border-radius: 6px; padding: 10px 12px; max-height: 220px; overflow: auto; }
+
+/* priority */
+.prio-filter { margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--border); align-items: center; }
+.prio-icon { margin-left: 6px; font-weight: 700; font-size: 13px; }
+.toolbar { flex-wrap: wrap; }
