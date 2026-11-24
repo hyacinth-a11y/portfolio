@@ -3,19 +3,20 @@ import Papa from 'papaparse'
 import { api, FIELD_TYPES, COLORS } from './api.js'
 import { displayValue, ticketKey, typeOf, WORK_TYPES, priorityOf, cleanPrefix } from './format.js'
 import { htmlToText, RichEditor, RichView } from './RichText.jsx'
+import { parseDate, toDateOnly } from './jira.js'
 
 export default function Settings({ boards = [], currentBoard, allTickets = [], settings, statuses, fields, templates, descTemplates = [], tickets, actions }) {
   const [tab, setTab] = useState('boards')
   return (
     <main className="settings">
       <div className="subtabs">
-        {[['boards', 'Boards'], ['statuses', 'Statuses'], ['fields', 'Fields'], ['templates', 'Checklist templates'], ['desc', 'Description templates'], ['data', 'Export']].map(([k, l]) => (
-          <button key={k} className={tab === k ? 'tab on' : 'tab'} onClick={() => setTab(k)}>{l}</button>
+        {[['boards', 'Boards'], ['statuses', 'Statuses', 'this board'], ['fields', 'Fields', 'all boards'], ['templates', 'Checklist templates', 'all boards'], ['desc', 'Description templates', 'all boards'], ['data', 'Export', 'this board']].map(([k, l, scope]) => (
+          <button key={k} className={tab === k ? 'tab on' : 'tab'} onClick={() => setTab(k)}>{l}{scope && <span className="scope">· {scope}</span>}</button>
         ))}
       </div>
       {tab === 'boards' && <Boards boards={boards} currentBoard={currentBoard} allTickets={allTickets} actions={actions} />}
       {tab === 'statuses' && <Statuses board={currentBoard} statuses={statuses} tickets={tickets} actions={actions} />}
-      {tab === 'fields' && <Fields fields={fields} actions={actions} />}
+      {tab === 'fields' && <Fields fields={fields} allTickets={allTickets} boards={boards} actions={actions} />}
       {tab === 'templates' && <Templates templates={templates} actions={actions} />}
       {tab === 'desc' && <DescTemplates templates={descTemplates} actions={actions} />}
       {tab === 'data' && <Export statuses={statuses} fields={fields} tickets={tickets} />}
@@ -99,7 +100,7 @@ function Statuses({ board, statuses, tickets, actions }) {
   }
   return (
     <section className="card wide">
-      <h3>Statuses · {board?.name} <span className="muted small">— this board's columns, left to right (switch boards at the top to edit another)</span></h3>
+      <h3>Statuses · {board?.name} <span className="pill this-board">This board only</span> <span className="muted small">— this board's columns, left to right (switch boards at the top to edit another)</span></h3>
       {statuses.map((s, i) => (
         <div className="set-row" key={s.id}>
           <input type="color" value={s.color} onChange={e => actions.saveRow('statuses', 'statuses', { id: s.id, color: e.target.value })} />
@@ -121,12 +122,120 @@ function Statuses({ board, statuses, tickets, actions }) {
   )
 }
 
-function Fields({ fields, actions }) {
+// Guess a field type from stored values
+function guessType(values) {
+  const v = values.filter(x => x != null && x !== '')
+  if (v.some(Array.isArray)) return 'multiselect'
+  if (v.every(x => typeof x === 'boolean')) return 'checkbox'
+  if (v.every(x => typeof x === 'number')) return 'number'
+  const str = v.map(String)
+  if (str.every(x => /^https?:\/\//i.test(x))) return 'link'
+  if (str.every(x => /^\d{4}-\d{2}-\d{2}$/.test(x))) return 'date'
+  if (str.some(x => x.length > 120 || x.includes('\n'))) return 'textarea'
+  const uniq = new Set(str)
+  if (str.length >= 4 && uniq.size <= 15 && uniq.size <= str.length / 3) return 'select'
+  return 'text'
+}
+
+// Values of deleted fields are still saved inside the tickets. This finds them and lets you bring the fields back.
+function RestoreFields({ fields, allTickets, boards, actions }) {
+  const known = new Set(fields.map(f => f.id))
+  const orphans = {}
+  for (const t of allTickets) for (const [fid, val] of Object.entries(t.custom || {})) {
+    if (known.has(fid) || val == null || val === '' || (Array.isArray(val) && !val.length)) continue
+    ;(orphans[fid] = orphans[fid] || { id: fid, tickets: [] }).tickets.push({ t, val })
+  }
+  const list = Object.values(orphans)
+  const [names, setNames] = useState({})
+  const [types, setTypes] = useState({})
+  const [busy, setBusy] = useState(false)
+  const [csvNote, setCsvNote] = useState('')
+  if (!list.length) return null
+  const boardName = id => boards.find(b => b.id === id)?.name || '?'
+
+  // optional: read names from the original Jira CSV by matching values
+  function matchCsv(file) {
+    Papa.parse(file, {
+      skipEmptyLines: 'greedy', complete: res => {
+        const [head, ...rows] = res.data
+        const cols = head.map((h, i) => {
+          const raw = rows.map(r => String(r[i] ?? '').trim()).filter(Boolean)
+          const dates = raw.map(v => toDateOnly(parseDate(v))).filter(Boolean)   // Jira dates -> 2026-06-22
+          return { name: String(h).replace(/^\ufeff/, '').replace(/^Custom field \((.*)\)$/i, '$1').trim(), vals: new Set([...raw, ...dates]) }
+        })
+        // score every (deleted field, column) pair, then hand out columns best-first so each is used once
+        const pairs = []
+        for (const o of list) {
+          const vals = o.tickets.flatMap(x => [x.val].flat()).map(v => String(v).trim())
+          cols.forEach((c, ci) => {
+            const score = vals.filter(v => c.vals.has(v) || [...c.vals].some(cv => cv.split(/\s*,\s*/).includes(v))).length
+            if (score >= Math.max(1, vals.length * 0.5)) pairs.push({ o, ci, score: score / vals.length, n: score })
+          })
+        }
+        pairs.sort((a, b) => b.score - a.score || b.n - a.n)
+        const guessed = {}, usedCols = new Set()
+        for (const pr of pairs) {
+          if (guessed[pr.o.id] || usedCols.has(pr.ci)) continue
+          guessed[pr.o.id] = cols[pr.ci].name; usedCols.add(pr.ci)
+        }
+        setNames(n => ({ ...guessed, ...Object.fromEntries(Object.entries(n).filter(([, v]) => v)) }))
+        setCsvNote(`Matched ${Object.keys(guessed).length} of ${list.length} fields to columns in ${file.name}.`)
+      },
+    })
+  }
+  async function restore(o) {
+    const name = (names[o.id] || '').trim()
+    if (!name) return alert('Type a name for this field first.')
+    const type = types[o.id] || guessType(o.tickets.map(x => x.val))
+    const options = type === 'select' || type === 'multiselect' ? [...new Set(o.tickets.flatMap(x => [x.val].flat()).map(String))] : []
+    // same id as before, so every ticket's value shows up again
+    await actions.insertRow('fields', 'fields', { id: o.id, name, type, options, position: fields.length })
+  }
+  async function restoreAll() {
+    const ready = list.filter(o => (names[o.id] || '').trim())
+    if (!ready.length) return alert('Type a name for at least one field (or match names from your Jira CSV).')
+    setBusy(true); for (const o of ready) await restore(o); setBusy(false)
+  }
+  return (
+    <section className="card wide restore">
+      <h3>Restore deleted fields <span className="muted small">— {list.length} deleted field{list.length > 1 ? 's' : ''} still {list.length > 1 ? 'have' : 'has'} values saved in your tickets</span></h3>
+      <p className="muted small">Deleting a field hides it, but the values stay in the tickets. Give each one its name back and click Restore — the values reappear on every ticket.
+        Don't remember the names? Choose your original Jira CSV and they'll be filled in for you.</p>
+      <div className="set-row"><label className="inline small">Fill names from a CSV:</label>
+        <input type="file" accept=".csv,text/csv" onChange={e => e.target.files[0] && matchCsv(e.target.files[0])} />
+        {csvNote && <span className="muted small">{csvNote}</span>}</div>
+      {list.map(o => {
+        const sample = [...new Set(o.tickets.map(x => [x.val].flat().join(', ')))].slice(0, 3)
+        const bs = [...new Set(o.tickets.map(x => boardName(x.t.board_id)))]
+        const type = types[o.id] || guessType(o.tickets.map(x => x.val))
+        return (
+          <div className="field-def" key={o.id}>
+            <div className="set-row">
+              <input placeholder="Field name (e.g. SOW)" value={names[o.id] || ''} onChange={e => setNames(n => ({ ...n, [o.id]: e.target.value }))} />
+              <select value={type} onChange={e => setTypes(t => ({ ...t, [o.id]: e.target.value }))}>
+                {FIELD_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+              <button className="primary" onClick={() => restore(o)}>Restore</button>
+            </div>
+            <div className="muted small restore-meta">
+              On {o.tickets.length} ticket{o.tickets.length > 1 ? 's' : ''} ({bs.join(', ')}) · e.g. {sample.map((x, i) => <code key={i}>{x.length > 60 ? x.slice(0, 60) + '…' : x}</code>)}
+            </div>
+          </div>
+        )
+      })}
+      <button className="primary" disabled={busy} onClick={restoreAll}>{busy ? 'Restoring…' : 'Restore all named fields'}</button>
+    </section>
+  )
+}
+
+function Fields({ fields, allTickets = [], boards = [], actions }) {
   const [draft, setDraft] = useState({ name: '', type: 'text' })
   const save = row => actions.saveRow('fields', 'fields', row)
-  return (
+  const usedOn = f => allTickets.filter(t => { const v = t.custom?.[f.id]; return v != null && v !== '' && !(Array.isArray(v) && !v.length) })
+  return (<>
+    <RestoreFields fields={fields} allTickets={allTickets} boards={boards} actions={actions} />
     <section className="card wide">
-      <h3>Custom fields <span className="muted small">— Title, Description, Status and Comments are built in</span></h3>
+      <h3>Custom fields <span className="pill all-boards">All boards</span> <span className="muted small">— these fields appear on every board. Title, Description, Status and Comments are built in</span></h3>
       {fields.length === 0 && <p className="muted">No custom fields yet.</p>}
       {fields.map((f, i) => (
         <div className="field-def" key={f.id}>
@@ -138,7 +247,13 @@ function Fields({ fields, actions }) {
             <label className="inline"><input type="checkbox" checked={f.show_on_card} onChange={e => save({ id: f.id, show_on_card: e.target.checked })} /> Show on card</label>
             <button className="ghost" onClick={() => swap(fields, i, i - 1, actions, 'fields', 'fields')} disabled={i === 0}>↑</button>
             <button className="ghost" onClick={() => swap(fields, i, i + 1, actions, 'fields', 'fields')} disabled={i === fields.length - 1}>↓</button>
-            <button className="ghost danger" onClick={() => confirm(`Delete field "${f.name}"? Values stored in tickets will be hidden.`) && actions.deleteRow('fields', 'fields', f.id)}>Delete</button>
+            <button className="ghost danger" onClick={() => {
+              const used = usedOn(f)
+              const bs = [...new Set(used.map(t => boards.find(b => b.id === t.board_id)?.name).filter(Boolean))]
+              confirm(`Delete field "${f.name}" from ALL boards?` +
+                (used.length ? `\n\nIt has values on ${used.length} ticket(s) in: ${bs.join(', ')}. The values are kept and can be restored later from this page.` : '')) &&
+                actions.deleteRow('fields', 'fields', f.id)
+            }}>Delete</button>
           </div>
           {(f.type === 'select' || f.type === 'multiselect') && (
             <div className="options">
@@ -160,7 +275,7 @@ function Fields({ fields, actions }) {
         <button className="primary" type="submit">Add field</button>
       </form>
     </section>
-  )
+  </>)
 }
 
 function DescTemplates({ templates, actions }) {
@@ -169,7 +284,7 @@ function DescTemplates({ templates, actions }) {
   const save = row => actions.saveRow('description_templates', 'descTemplates', row)
   return (
     <section className="card wide">
-      <h3>Description templates <span className="muted small">— insert them from “Template” when editing a description</span></h3>
+      <h3>Description templates <span className="pill all-boards">All boards</span> <span className="muted small">— insert them from “Template” when editing a description</span></h3>
       {templates.length === 0 && editing !== 'new' && <p className="muted">No description templates yet.</p>}
       {templates.map(t => (
         <div className="field-def" key={t.id}>
@@ -216,7 +331,7 @@ function Templates({ templates, actions }) {
   const lines = s => s.split('\n').map(x => x.trim()).filter(Boolean)
   return (
     <section className="card wide">
-      <h3>Checklist templates <span className="muted small">— add them to any ticket from “+ Add checklist”</span></h3>
+      <h3>Checklist templates <span className="pill all-boards">All boards</span> <span className="muted small">— add them to any ticket from “+ Add checklist”</span></h3>
       {templates.map(t => (
         <div className="field-def" key={t.id}>
           <div className="set-row">

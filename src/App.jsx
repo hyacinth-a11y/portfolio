@@ -190,6 +190,11 @@ function Workspace({ session }) {
         setData(d => ({ ...d, [key]: [...d[key], r] }))
       }
     },
+    // insert a row with a chosen id (used to bring back a deleted field so its saved values show again)
+    async insertRow(table, key, row) {
+      const r = await api.insertOne(table, row)
+      setData(d => ({ ...d, [key]: [...d[key].filter(x => x.id !== r.id), r] }))
+    },
     async deleteRow(table, key, id) {
       setData(d => ({ ...d, [key]: d[key].filter(r => r.id !== id) }))
       await api.remove(table, id)

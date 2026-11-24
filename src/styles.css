@@ -289,3 +289,12 @@ h3, h4 { color: var(--text); }
 .board-rows .head { margin-bottom: 4px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; }
 .set-row.add .bc-name { flex: 1; } .set-row.add .bc-key { width: 120px !important; flex: none !important; }
+
+/* restore deleted fields / scope labels */
+.restore { border: 1px solid #f5cd47; background: #fffbea; }
+.restore .field-def { background: var(--panel); }
+.restore-meta { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.restore-meta code { font-size: 11px; }
+.pill.all-boards { background: var(--chip); color: var(--navy-700); font-size: 11px; font-weight: 700; vertical-align: 2px; }
+.pill.this-board { background: #fff1e0; color: #8a4b0f; font-size: 11px; font-weight: 700; vertical-align: 2px; }
+.subtabs .scope { font-size: 10px; color: var(--muted); margin-left: 4px; }
