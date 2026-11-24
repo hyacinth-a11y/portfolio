@@ -201,7 +201,7 @@ export default function TicketModal({ ticket, tickets, boards = [], links = [], 
                     <span style={{ color: typeOf(c).color }} title={typeOf(c).label}>{typeOf(c).icon}</span>
                     <span className="key">{ticketKey(c)}</span>
                     <span className="child-title">{c.title}</span>
-                    <span className="pill status-pill">{statusName(c.status_id)}</span>
+                    <StatusChip st={statuses.find(x => x.id === c.status_id)} />
                     <button className="link small unlink" title="Remove from this parent"
                       onClick={e => { e.stopPropagation(); actions.updateTicket(c.id, { parent_id: null }) }}>✕</button>
                   </div>
@@ -249,7 +249,7 @@ export default function TicketModal({ ticket, tickets, boards = [], links = [], 
                         <span style={{ color: typeOf(l.other).color }} title={typeOf(l.other).label}>{typeOf(l.other).icon}</span>
                         <span className="key">{ticketKey(l.other)}</span>
                         <span className="child-title">{l.other.title}</span>
-                        <span className="pill status-pill">{statusName(l.other.status_id)}</span>
+                        <StatusChip st={statuses.find(x => x.id === l.other.status_id)} />
                         <button className="link small unlink" title="Remove link"
                           onClick={e => { e.stopPropagation(); actions.removeLink(l.id) }}>✕</button>
                       </div>
@@ -298,6 +298,7 @@ export default function TicketModal({ ticket, tickets, boards = [], links = [], 
           </div>
 
           <aside className="side-col">
+            <StatusPicker statuses={statuses} value={ticket.status_id} onChange={id => upd({ status_id: id })} />
             {boards.length > 1 && <label className="field">
               <span>Board</span>
               <select value={ticket.board_id || ''} onChange={async e => {
@@ -336,12 +337,6 @@ export default function TicketModal({ ticket, tickets, boards = [], links = [], 
                 ))}
               </select>
             </label>}
-            <label className="field">
-              <span>Status</span>
-              <select value={ticket.status_id || ''} onChange={e => upd({ status_id: e.target.value })}>
-                {statuses.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </label>
             {fields.length === 0 && <p className="muted small">Add custom fields (links, dates, dropdowns…) in Settings → Fields.</p>}
             {fields.map(f => (
               <div className="field" key={f.id}>
@@ -358,6 +353,45 @@ export default function TicketModal({ ticket, tickets, boards = [], links = [], 
           </aside>
         </div>
       </div>
+    </div>
+  )
+}
+
+// readable text (dark or white) on top of a status color
+function textOn(hex) {
+  const m = String(hex || '').replace('#', '').match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i)
+  if (!m) return '#fff'
+  const [r, g, b] = m.slice(1).map(x => parseInt(x, 16) / 255).map(c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.45 ? '#172b4d' : '#fff'
+}
+
+function StatusChip({ st }) {
+  if (!st) return null
+  return <span className="status-chip" style={{ background: st.color, color: textOn(st.color) }}>{st.name}</span>
+}
+
+// Jira-style status button at the top of the details panel, in the status's own color
+function StatusPicker({ statuses, value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const cur = statuses.find(s => s.id === value) || statuses[0]
+  return (
+    <div className="status-picker">
+      <button className="status-btn" style={{ background: cur?.color, color: textOn(cur?.color) }}
+        onClick={() => setOpen(v => !v)} title="Change status">
+        {cur?.name || 'No status'} <span className="caret">▾</span>
+      </button>
+      {open && <>
+        <div className="menu-backdrop" onClick={() => setOpen(false)} />
+        <div className="status-menu">
+          {statuses.map(s => (
+            <button key={s.id} className={'status-opt' + (s.id === cur?.id ? ' on' : '')}
+              onClick={() => { setOpen(false); if (s.id !== cur?.id) onChange(s.id) }}>
+              <span className="status-chip" style={{ background: s.color, color: textOn(s.color) }}>{s.name}</span>
+              {s.id === cur?.id && <span className="muted small">current</span>}
+            </button>
+          ))}
+        </div>
+      </>}
     </div>
   )
 }

@@ -298,3 +298,13 @@ h3, h4 { color: var(--text); }
 .pill.all-boards { background: var(--chip); color: var(--navy-700); font-size: 11px; font-weight: 700; vertical-align: 2px; }
 .pill.this-board { background: #fff1e0; color: #8a4b0f; font-size: 11px; font-weight: 700; vertical-align: 2px; }
 .subtabs .scope { font-size: 10px; color: var(--muted); margin-left: 4px; }
+
+/* status at the top of the ticket panel */
+.status-picker { position: relative; margin-bottom: 4px; }
+.status-btn { font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: .3px; padding: 7px 12px; border-radius: 4px; display: inline-flex; align-items: center; gap: 8px; box-shadow: inset 0 -1px 0 rgba(0,0,0,.12); }
+.status-btn:hover { filter: brightness(.93); }
+.status-btn .caret { font-size: 11px; opacity: .85; }
+.status-menu { position: absolute; top: 38px; left: 0; z-index: 31; min-width: 220px; max-height: 320px; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(9,30,66,.2); padding: 4px; display: flex; flex-direction: column; }
+.status-opt { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: transparent; padding: 6px 8px; text-align: left; }
+.status-opt:hover, .status-opt.on { background: var(--hover); }
+.status-chip { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; padding: 2px 8px; border-radius: 3px; }
