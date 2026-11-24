@@ -5,7 +5,11 @@ import { suggest, convert, parseComment, parseDate, jiraToText } from './jira.js
 import { mapWorkType, WORK_TYPES, levelOf, mapLinkType, mapPriority } from './format.js'
 import { textToHtml } from './RichText.jsx'
 
-export default function ImportCsv({ statuses, fields, tickets: existing = [], settings, actions, onDone }) {
+export default function ImportCsv({ boards = [], currentBoard, statusesOf, statuses: _cur, fields, tickets: existing = [], settings, actions, onDone }) {
+  const [targetId, setTargetId] = useState(currentBoard?.id)
+  const [adoptPrefix, setAdoptPrefix] = useState(true)
+  const target = boards.find(b => b.id === targetId) || currentBoard
+  const statuses = statusesOf ? statusesOf(target.id) : _cur
   const [rows, setRows] = useState(null)        // data rows (arrays)
   const [groups, setGroups] = useState([])      // [{name, idx:[], map:{kind,...}}]
   const [fileName, setFileName] = useState('')
@@ -58,11 +62,17 @@ export default function ImportCsv({ statuses, fields, tickets: existing = [], se
   const newFieldCount = groups.filter(g => g.map.kind === 'new').length
   const keyGroup = groups.find(g => g.map.kind === 'key')
   const typeGroup = groups.find(g => g.map.kind === 'worktype')
-  const existingKeys = new Set(existing.map(t => (t.key || '').toUpperCase()).filter(Boolean))
+  const existingKeys = new Set(existing.flatMap(t => [t.key, ...(t.prev_keys || [])]).map(k => String(k || '').toUpperCase()).filter(Boolean))
   const cellOf = (r, g) => g ? String(r[g.idx[0]] ?? '').trim() : ''
   const dupCount = rows && keyGroup ? rows.filter(r => existingKeys.has(cellOf(r, keyGroup).toUpperCase())).length : 0
   const typeCounts = rows && typeGroup ? WORK_TYPES.map(w => [w.label, rows.filter(r => mapWorkType(cellOf(r, typeGroup)) === w.value).length]).filter(x => x[1]) : null
   const nestCount = rows ? rows.filter(r => groups.some(g => (g.map.kind === 'parent_key' || g.map.kind === 'parent_id') && cellOf(r, g))).length : 0
+  const prefixes = rows && keyGroup ? rows.map(r => (cellOf(r, keyGroup).toUpperCase().match(/^([A-Z][A-Z0-9_]*)-\d+$/) || [])[1]).filter(Boolean) : []
+  const detected = Object.entries(prefixes.reduce((m, p) => (m[p] = (m[p] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1])[0]?.[0]
+  const targetEmpty = !existing.some(t => t.board_id === target.id)
+  const prefixTaken = detected && boards.some(b => b.id !== target.id && b.key_prefix === detected)
+  const keyMode = !detected || detected === target.key_prefix ? 'keep'
+    : (targetEmpty && !prefixTaken && adoptPrefix) ? 'adopt' : 'rekey'
   const checklistCount = groups.filter(g => g.map.kind === 'checklist').length
   const commentCount = rows ? groups.filter(g => g.map.kind === 'comments').reduce((n, g) => n + g.filled, 0) : 0
 
@@ -75,7 +85,7 @@ export default function ImportCsv({ statuses, fields, tickets: existing = [], se
       let allStatuses = [...statuses]
       if (newStatusNames.length) {
         const created = await api.insert('statuses', newStatusNames.map((name, i) => ({
-          name, color: COLORS[(statuses.length + i) % COLORS.length], position: statuses.length + i,
+          name, color: COLORS[(statuses.length + i) % COLORS.length], position: statuses.length + i, board_id: target.id,
         })))
         allStatuses = allStatuses.concat(created)
       }
@@ -132,6 +142,8 @@ export default function ImportCsv({ statuses, fields, tickets: existing = [], se
       const prefixCount = {}
       const pendingLinks = []
       let skipped = 0
+      let nextNo = Math.max(0, ...existing.filter(t => t.board_id === target.id).map(t => t.number || 0))
+      if (keyMode === 'adopt') await actions.saveRow('boards', 'boards', { id: target.id, key_prefix: detected })
       rows.forEach(r => {
         const title = String(r[titleGroup.idx[0]] || '').trim()
         if (!title) return
@@ -141,9 +153,10 @@ export default function ImportCsv({ statuses, fields, tickets: existing = [], se
         const sid = statusGroup ? statusId(r[statusGroup.idx[0]]) : allStatuses[0].id
         pos[sid] = (pos[sid] || 0) + 1
         const t = { id, title, status_id: sid, position: pos[sid], description: '', custom: {}, checklists: [], work_type: 'project', priority: 'low', created_at: new Date().toISOString() }
+        t.board_id = target.id
         const km = key.match(/^([A-Z][A-Z0-9_]*)-(\d+)$/)
-        if (km) { t.key = key; t.number = +km[2]; prefixCount[km[1]] = (prefixCount[km[1]] || 0) + 1 }
-        else if (key) t.key = key
+        if (km && keyMode !== 'rekey') { t.key = key; t.number = +km[2]; prefixCount[km[1]] = (prefixCount[km[1]] || 0) + 1 }
+        else if (key) { nextNo += 1; t.number = nextNo; t.key = `${target.key_prefix}-${nextNo}`; t.prev_keys = [key] }
         groups.forEach((g, i) => {
           const cells = g.idx.map(x => r[x])
           if (g.map.kind === 'priority') { if (String(cells[0] || '').trim()) t.priority = mapPriority(cells[0]) }
@@ -173,20 +186,20 @@ export default function ImportCsv({ statuses, fields, tickets: existing = [], se
       })
       // 3b. nesting: resolve parents by key / Jira id (from this file or tickets already on the board)
       const byKey = {}, byJira = {}
-      ;[...existing, ...tickets].forEach(t => { if (t.key) byKey[t.key.toUpperCase()] = t; if (t.jira_id) byJira[t.jira_id] = t })
+      ;[...existing, ...tickets].forEach(t => {
+        ;[t.key, ...(t.prev_keys || [])].filter(Boolean).forEach(k => { byKey[String(k).toUpperCase()] = t })
+        if (t.jira_id) byJira[t.jira_id] = t
+      })
       let nested = 0, badNest = 0
       tickets.forEach(t => {
         const p = (t._parentKey && byKey[t._parentKey]) || (t._parentJira && byJira[t._parentJira])
         if (p && p.id !== t.id) {
-          if (levelOf(p) < levelOf(t)) { t.parent_id = p.id; nested++ } else badNest++
+          if (levelOf(p) < levelOf(t) && (p.board_id || target.id) === target.id) { t.parent_id = p.id; nested++ } else badNest++
         }
         delete t._parentKey; delete t._parentJira
       })
       // parents first, so they exist before their children are saved
       tickets.sort((a, b) => levelOf(a) - levelOf(b))
-      // adopt the Jira prefix for new tickets if you haven't set your own
-      const topPrefix = Object.entries(prefixCount).sort((a, b) => b[1] - a[1])[0]?.[0]
-      if (topPrefix && (!settings || settings.key_prefix === 'PRJ')) await actions.saveSettings({ key_prefix: topPrefix })
 
       for (let i = 0; i < tickets.length; i += 200) {
         setProgress(`Creating tickets… ${Math.min(i + 200, tickets.length)}/${tickets.length}`)
@@ -224,6 +237,12 @@ export default function ImportCsv({ statuses, fields, tickets: existing = [], se
     <main className="settings">
       <section className="card wide">
         <h3>Import from CSV</h3>
+        <div className="set-row">
+          <label className="inline">Import into board</label>
+          <select style={{ width: 'auto' }} value={target.id} onChange={e => setTargetId(e.target.value)}>
+            {boards.map(b => <option key={b.id} value={b.id}>{b.key_prefix} · {b.name}</option>)}
+          </select>
+        </div>
         <p className="muted">
           In Jira: open your board → <b>Filters / Search issues</b> → show all issues → <b>Export → Export CSV (all fields)</b>.
           Then choose that file here. Repeated columns (like several <i>Comment</i> or <i>Labels</i> columns) are combined automatically.
@@ -286,6 +305,16 @@ export default function ImportCsv({ statuses, fields, tickets: existing = [], se
             {checklistCount > 0 && <>, <b>{checklistCount}</b> checklist{checklistCount > 1 ? 's' : ''} per ticket (also saved as a template)</>}
             {newStatusNames.length > 0 && <>, and <b>{newStatusNames.length}</b> new statuses ({newStatusNames.join(', ')})</>}.
             {typeCounts && <div className="muted small">Work types: {typeCounts.map(([l, n]) => `${n} ${l}`).join(' · ')}{nestCount > 0 && ` · ${nestCount} will be nested under a parent`}</div>}
+            {detected && keyMode !== 'keep' && (
+              <div className="note small">
+                {keyMode === 'adopt'
+                  ? <>This file's keys start with <b>{detected}</b>. The board “{target.name}” will switch its key from {target.key_prefix} to <b>{detected}</b> so tickets keep their Jira keys.</>
+                  : <>This file's keys start with <b>{detected}</b> but the board uses <b>{target.key_prefix}</b>. Tickets get new {target.key_prefix} keys; their Jira keys are kept and still work in search and nesting.</>}
+                {targetEmpty && !prefixTaken && <label className="inline" style={{ marginTop: 6 }}>
+                  <input type="checkbox" checked={adoptPrefix} onChange={e => setAdoptPrefix(e.target.checked)} /> Use {detected} as this board's key
+                </label>}
+              </div>
+            )}
             {dupCount > 0 && <div className="note small">{dupCount} rows have an issue key that's already on your board — they'll be skipped.</div>}
           </div>
           <div className="row">

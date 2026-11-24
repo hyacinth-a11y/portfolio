@@ -1,5 +1,7 @@
 # Portfolio read-only API
 
+**Only boards ticked “Shared with API” (Settings → Boards) are returned.** Other boards are never sent.
+
 `GET https://YOUR-SITE.vercel.app/api/portfolio`
 
 Send your token in a header: `Authorization: Bearer YOUR_TOKEN` (or `x-api-key: YOUR_TOKEN`).
@@ -8,7 +10,8 @@ For tools that can't set headers, `?token=YOUR_TOKEN` also works (less private �
 ## Filters (optional)
 | Parameter | Example | Meaning |
 |---|---|---|
-| `key` | `?key=POC-71` | one ticket |
+| `board` | `?board=POC` | only this board (its key or name); must be shared |
+| `key` | `?key=POC-71` | one ticket (old keys work too) |
 | `status` | `?status=In Progress` | tickets in that column |
 | `work_type` | `?work_type=project` | `workstream`, `project` or `subtask` |
 | `priority` | `?priority=high` | `low`, `medium`, `high` or `highest` |

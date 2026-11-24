@@ -11,6 +11,7 @@ export function displayValue(field, v) {
   }
 }
 export const ticketKey = t => t.key || `PRJ-${t.number ?? '?'}`
+export const cleanPrefix = v => String(v || '').toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 10)
 
 // Hierarchy: Workstream > Project Name > Sub-task (levels can be skipped)
 export const WORK_TYPES = [
@@ -43,7 +44,7 @@ export function checklistProgress(t) {
 export function matches(t, q, fields) {
   if (!q) return true
   q = q.toLowerCase()
-  const hay = [t.title, String(t.description || '').replace(/<[^>]+>/g, ' '), ticketKey(t),
+  const hay = [t.title, String(t.description || '').replace(/<[^>]+>/g, ' '), ticketKey(t), ...(t.prev_keys || []),
     ...fields.map(f => displayValue(f, t.custom?.[f.id]))].join(' ').toLowerCase()
   return hay.includes(q)
 }

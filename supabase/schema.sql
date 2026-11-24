@@ -77,10 +77,14 @@ create or replace function set_ticket_number() returns trigger as $$
 begin
   if tg_op = 'INSERT' then
     if new.number is null then
-      select coalesce(max(number), 0) + 1 into new.number from tickets where user_id = new.user_id;
+      select coalesce(max(number), 0) + 1 into new.number from tickets
+        where user_id = new.user_id and board_id is not distinct from new.board_id;
     end if;
     if new.key is null then
-      new.key := coalesce((select key_prefix from settings where user_id = new.user_id limit 1), 'PRJ') || '-' || new.number;
+      new.key := coalesce(
+        (select key_prefix from boards where id = new.board_id),
+        (select key_prefix from settings where user_id = new.user_id limit 1),
+        'PRJ') || '-' || new.number;
     end if;
   end if;
   new.updated_at := now();
@@ -113,6 +117,34 @@ create table if not exists description_templates (
 -- ---- v5: priority ----
 alter table tickets add column if not exists priority text not null default 'low';  -- low | medium | high | highest
 
+-- ---- v6: multiple boards ----
+create table if not exists boards (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users on delete cascade,
+  name text not null,
+  key_prefix text not null,                    -- e.g. POC -> tickets POC-1, POC-2 ...
+  position int not null default 0,
+  api_enabled boolean not null default false,  -- shared with other apps through /api/portfolio
+  created_at timestamptz not null default now()
+);
+alter table statuses add column if not exists board_id uuid references boards on delete cascade;
+alter table tickets add column if not exists board_id uuid references boards on delete set null;
+alter table tickets add column if not exists prev_keys jsonb not null default '[]'::jsonb;  -- old keys after a move / key change
+create index if not exists tickets_board on tickets (board_id);
+
+-- first-time upgrade: put everything that exists today on one board called "Projects" (shared with the API)
+insert into boards (user_id, name, key_prefix, api_enabled)
+  select u.user_id, 'Projects', coalesce((select key_prefix from settings st where st.user_id = u.user_id limit 1), 'PRJ'), true
+  from (select user_id from tickets union select user_id from statuses) u
+  where not exists (select 1 from boards b where b.user_id = u.user_id);
+do $$ begin
+  if exists (select 1 from pg_trigger where tgname = 'tickets_number') then
+    alter table tickets disable trigger tickets_number;  -- don't touch "updated" dates while moving rows onto the board
+  end if;
+end $$;
+update statuses set board_id = (select id from boards b where b.user_id = statuses.user_id order by created_at limit 1) where board_id is null;
+update tickets set board_id = (select id from boards b where b.user_id = tickets.user_id order by created_at limit 1) where board_id is null;
+
 -- give older tickets a key
 update tickets set key = coalesce((select key_prefix from settings st where st.user_id = tickets.user_id), 'PRJ') || '-' || number
   where key is null and number is not null;
@@ -130,11 +162,12 @@ alter table checklist_templates enable row level security;
 alter table settings enable row level security;
 alter table ticket_links enable row level security;
 alter table description_templates enable row level security;
+alter table boards enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['statuses','fields','tickets','comments','checklist_templates','settings','ticket_links','description_templates'] loop
+  foreach t in array array['statuses','fields','tickets','comments','checklist_templates','settings','ticket_links','description_templates','boards'] loop
     execute format('drop policy if exists "owner_all" on %I', t);
     execute format('create policy "owner_all" on %I for all using (user_id = auth.uid()) with check (user_id = auth.uid())', t);
   end loop;
@@ -147,6 +180,6 @@ create index if not exists comments_ticket on comments (ticket_id, created_at);
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
-    grant select, insert, update, delete on statuses, fields, tickets, comments, checklist_templates, settings, ticket_links, description_templates to authenticated;
+    grant select, insert, update, delete on statuses, fields, tickets, comments, checklist_templates, settings, ticket_links, description_templates, boards to authenticated;
   end if;
 end $$;

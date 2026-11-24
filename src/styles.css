@@ -265,3 +265,27 @@ h3, h4 { color: var(--text); }
 .prio-filter { margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--border); align-items: center; }
 .prio-icon { margin-left: 6px; font-weight: 700; font-size: 13px; }
 .toolbar { flex-wrap: wrap; }
+
+/* search with clear button */
+.search-wrap { position: relative; display: flex; align-items: center; width: 260px; max-width: 100%; }
+.search-wrap .search { max-width: none; padding-left: 28px !important; padding-right: 28px !important; }
+.search-icon { position: absolute; left: 9px; color: var(--muted); font-size: 15px; pointer-events: none; }
+.search-clear { position: absolute; right: 4px; background: transparent; padding: 2px 6px; color: var(--muted); font-size: 12px; border-radius: 50%; }
+.search-clear:hover { background: var(--hover); color: var(--text); }
+
+/* boards */
+.board-switch { position: relative; }
+.board-btn { background: var(--hover); font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.board-key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; font-weight: 700; background: var(--navy-700); color: #fff; padding: 1px 6px; border-radius: 3px; }
+.menu-backdrop { position: fixed; inset: 0; z-index: 30; }
+.board-menu { position: absolute; top: 36px; left: 0; z-index: 31; min-width: 280px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(9,30,66,.2); padding: 4px; display: flex; flex-direction: column; }
+.board-item { display: flex; align-items: center; gap: 8px; background: transparent; text-align: left; padding: 8px 10px; }
+.board-item:hover { background: var(--hover); }
+.board-item.on { background: var(--chip); }
+.board-name { flex: 1; }
+.board-item.new { color: var(--link); border-top: 1px solid var(--border); border-radius: 0; }
+.api-pill { background: #e3fcef; color: #216e4e; font-size: 10px; font-weight: 700; }
+.board-rows .set-row { display: grid; grid-template-columns: 1fr 120px 110px 140px 80px; gap: 8px; }
+.board-rows .head { margin-bottom: 4px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; }
+.set-row.add .bc-name { flex: 1; } .set-row.add .bc-key { width: 120px !important; flex: none !important; }

@@ -1,20 +1,20 @@
 import { useState } from 'react'
 import Papa from 'papaparse'
 import { api, FIELD_TYPES, COLORS } from './api.js'
-import { displayValue, ticketKey, typeOf, WORK_TYPES, priorityOf } from './format.js'
+import { displayValue, ticketKey, typeOf, WORK_TYPES, priorityOf, cleanPrefix } from './format.js'
 import { htmlToText, RichEditor, RichView } from './RichText.jsx'
 
-export default function Settings({ settings, statuses, fields, templates, descTemplates = [], tickets, actions }) {
-  const [tab, setTab] = useState('general')
+export default function Settings({ boards = [], currentBoard, allTickets = [], settings, statuses, fields, templates, descTemplates = [], tickets, actions }) {
+  const [tab, setTab] = useState('boards')
   return (
     <main className="settings">
       <div className="subtabs">
-        {[['general', 'General'], ['statuses', 'Statuses'], ['fields', 'Fields'], ['templates', 'Checklist templates'], ['desc', 'Description templates'], ['data', 'Export']].map(([k, l]) => (
+        {[['boards', 'Boards'], ['statuses', 'Statuses'], ['fields', 'Fields'], ['templates', 'Checklist templates'], ['desc', 'Description templates'], ['data', 'Export']].map(([k, l]) => (
           <button key={k} className={tab === k ? 'tab on' : 'tab'} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
-      {tab === 'general' && <General settings={settings} tickets={tickets} actions={actions} />}
-      {tab === 'statuses' && <Statuses statuses={statuses} tickets={tickets} actions={actions} />}
+      {tab === 'boards' && <Boards boards={boards} currentBoard={currentBoard} allTickets={allTickets} actions={actions} />}
+      {tab === 'statuses' && <Statuses board={currentBoard} statuses={statuses} tickets={tickets} actions={actions} />}
       {tab === 'fields' && <Fields fields={fields} actions={actions} />}
       {tab === 'templates' && <Templates templates={templates} actions={actions} />}
       {tab === 'desc' && <DescTemplates templates={descTemplates} actions={actions} />}
@@ -23,22 +23,56 @@ export default function Settings({ settings, statuses, fields, templates, descTe
   )
 }
 
-function General({ settings, tickets, actions }) {
-  const prefix = settings?.key_prefix || 'PRJ'
-  const next = Math.max(0, ...tickets.map(t => t.number || 0)) + 1
+function Boards({ boards, currentBoard, allTickets, actions }) {
+  const [name, setName] = useState('')
+  const [key, setKey] = useState('')
+  const count = id => allTickets.filter(t => t.board_id === id).length
+  const taken = (k, exceptId) => boards.some(b => b.id !== exceptId && b.key_prefix === k)
+  async function changeKey(b, input) {
+    const v = cleanPrefix(input.value)
+    if (!v || v === b.key_prefix) { input.value = b.key_prefix; return }
+    if (taken(v, b.id)) { alert(`Another board already uses ${v}.`); input.value = b.key_prefix; return }
+    const n = count(b.id)
+    if (!confirm(`Change the key of "${b.name}" from ${b.key_prefix} to ${v}?` + (n ? `\n\nAll ${n} tickets get new keys (e.g. ${b.key_prefix}-12 becomes ${v}-12). Old keys still work in search.` : ''))) { input.value = b.key_prefix; return }
+    input.disabled = true
+    await actions.changeBoardKey(b, v)
+    input.disabled = false
+  }
   return (
     <section className="card wide">
-      <h3>Issue keys</h3>
-      <p className="muted">Every ticket gets a key like <b>{prefix}-{next}</b>. Imported Jira tickets keep their original key; new tickets continue numbering from the highest one.</p>
-      <div className="set-row">
-        <label className="inline">Key prefix</label>
-        <input style={{ maxWidth: 160 }} defaultValue={prefix} key={prefix}
-          onBlur={e => {
-            const v = e.target.value.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '')
-            if (v && v !== prefix) actions.saveSettings({ key_prefix: v }); e.target.value = v || prefix
-          }} />
-        <span className="muted small">Next new ticket: {prefix}-{next}. Existing keys don't change.</span>
+      <h3>Boards <span className="muted small">— each board has its own columns and its own ticket key</span></h3>
+      <div className="board-rows">
+        <div className="set-row head muted small"><span className="bc-name">Name</span><span className="bc-key">Key</span><span className="bc-n">Tickets</span><span className="bc-api">Shared with API</span><span /></div>
+        {boards.map(b => (
+          <div className="set-row" key={b.id}>
+            <input className="bc-name" defaultValue={b.name} onBlur={e => e.target.value.trim() && e.target.value !== b.name && actions.saveRow('boards', 'boards', { id: b.id, name: e.target.value.trim() })} />
+            <input className="bc-key mono" defaultValue={b.key_prefix} key={b.key_prefix} onBlur={e => changeKey(b, e.target)}
+              onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }} />
+            <span className="bc-n muted small">{count(b.id)}{b.id === currentBoard.id && ' · open now'}</span>
+            <label className="bc-api inline small"><input type="checkbox" checked={!!b.api_enabled}
+              onChange={e => actions.saveRow('boards', 'boards', { id: b.id, api_enabled: e.target.checked })} /> {b.api_enabled ? 'Yes' : 'No'}</label>
+            <button className="ghost danger" onClick={() => {
+              if (boards.length === 1) return alert('You need at least one board.')
+              if (count(b.id)) return alert(`"${b.name}" still has ${count(b.id)} tickets. Move them to another board first (open a ticket → Board).`)
+              if (confirm(`Delete board "${b.name}" and its columns?`)) actions.deleteRow('boards', 'boards', b.id)
+            }}>Delete</button>
+          </div>
+        ))}
       </div>
+      <form className="set-row add" onSubmit={async e => {
+        e.preventDefault()
+        const k = cleanPrefix(key), n = name.trim()
+        if (!n || !k) return alert('Give the board a name and a key.')
+        if (taken(k)) return alert(`Another board already uses ${k}.`)
+        await actions.createBoard(n, k); setName(''); setKey('')
+      }}>
+        <input className="bc-name" placeholder="New board name (e.g. Internal Ops)" value={name}
+          onChange={e => { setName(e.target.value); if (!key) {} }} />
+        <input className="bc-key mono" placeholder="KEY" value={key} onChange={e => setKey(cleanPrefix(e.target.value))} />
+        <button className="primary" type="submit">Add board</button>
+      </form>
+      <p className="muted small">The key is the prefix on ticket numbers (POC-12). Changing it re-keys every ticket on that board; the old keys are remembered and still found by search.
+        “Shared with API” controls which boards your other apps (like Off Duty) can read through <code>/api/portfolio</code> — boards left unticked are never sent.</p>
     </section>
   )
 }
@@ -53,7 +87,7 @@ async function swap(list, i, j, actions, table, key) {
     await actions.saveRow(table, key, { id: list[k].id, position: k })
 }
 
-function Statuses({ statuses, tickets, actions }) {
+function Statuses({ board, statuses, tickets, actions }) {
   const [name, setName] = useState('')
   const del = async s => {
     const n = tickets.filter(t => t.status_id === s.id).length
@@ -65,7 +99,7 @@ function Statuses({ statuses, tickets, actions }) {
   }
   return (
     <section className="card wide">
-      <h3>Statuses <span className="muted small">— these are your board columns, left to right</span></h3>
+      <h3>Statuses · {board?.name} <span className="muted small">— this board's columns, left to right (switch boards at the top to edit another)</span></h3>
       {statuses.map((s, i) => (
         <div className="set-row" key={s.id}>
           <input type="color" value={s.color} onChange={e => actions.saveRow('statuses', 'statuses', { id: s.id, color: e.target.value })} />
@@ -78,7 +112,7 @@ function Statuses({ statuses, tickets, actions }) {
       ))}
       <form className="set-row" onSubmit={e => {
         e.preventDefault(); if (!name.trim()) return
-        actions.saveRow('statuses', 'statuses', { name: name.trim(), color: COLORS[statuses.length % COLORS.length], position: statuses.length }); setName('')
+        actions.saveRow('statuses', 'statuses', { name: name.trim(), color: COLORS[statuses.length % COLORS.length], position: statuses.length, board_id: board.id }); setName('')
       }}>
         <input placeholder="New status name" value={name} onChange={e => setName(e.target.value)} />
         <button className="primary" type="submit">Add status</button>

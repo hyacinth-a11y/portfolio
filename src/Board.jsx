@@ -70,7 +70,7 @@ export default function Board({ statuses, fields, tickets, actions, onOpen }) {
     e.preventDefault()
     if (!newCol.trim()) return
     await actions.saveRow('statuses', 'statuses', {
-      name: newCol.trim(), color: COLORS[statuses.length % COLORS.length],
+      name: newCol.trim(), color: COLORS[statuses.length % COLORS.length], board_id: statuses[0]?.board_id,
       position: Math.max(-1, ...statuses.map(s => s.position)) + 1,
     })
     setNewCol('')
@@ -79,7 +79,13 @@ export default function Board({ statuses, fields, tickets, actions, onOpen }) {
   return (
     <main className="board-wrap">
       <div className="toolbar">
-        <input className="search" placeholder="Search tickets…" value={q} onChange={e => setQ(e.target.value)} />
+        <div className="search-wrap">
+          <span className="search-icon" aria-hidden>⌕</span>
+          <input className="search" placeholder="Search tickets…" value={q} onChange={e => setQ(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Escape') setQ('') }} />
+          {q && <button className="search-clear" title="Clear search" aria-label="Clear search"
+            onClick={e => { setQ(''); e.currentTarget.parentElement.querySelector('input').focus() }}>✕</button>}
+        </div>
         <div className="type-filter">
           {[{ value: 'all', label: 'All' }, ...WORK_TYPES].map(w => (
             <button key={w.value} className={'chip' + (typeFilter === w.value ? ' on' : '')} onClick={() => setTypeFilter(w.value)}>

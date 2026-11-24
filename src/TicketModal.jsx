@@ -17,7 +17,7 @@ function Linkify({ text }) {
   })
 }
 
-export default function TicketModal({ ticket, tickets, links = [], descTemplates = [], onOpen, statuses, fields, templates, actions, onClose }) {
+export default function TicketModal({ ticket, tickets, boards = [], links = [], descTemplates = [], onOpen, statuses, fields, templates, actions, onClose }) {
   const [childTitle, setChildTitle] = useState('')
   const wt = typeOf(ticket)
   const byId = Object.fromEntries(tickets.map(t => [t.id, t]))
@@ -27,13 +27,13 @@ export default function TicketModal({ ticket, tickets, links = [], descTemplates
   const [parentPicker, setParentPicker] = useState(false)
   const [childMode, setChildMode] = useState('create') // create | existing
   useEffect(() => { setParentPicker(false); setChildMode('create'); setComposing(false); setEditingComment(null); setLinking(false) }, [ticket.id])
-  const childCandidates = tickets.filter(t => t.id !== ticket.id && t.parent_id !== ticket.id && levelOf(t) > wt.level)
+  const childCandidates = tickets.filter(t => t.board_id === ticket.board_id && t.id !== ticket.id && t.parent_id !== ticket.id && levelOf(t) > wt.level)
   const chosenChildType = lowerTypes.find(w => w.value === childType) || lowerTypes[0]
   // breadcrumb: parent chain
   const chain = []
   for (let p = byId[ticket.parent_id], guard = 0; p && guard < 10; p = byId[p.parent_id], guard++) chain.unshift(p)
   const blocked = descendants(ticket.id, tickets)
-  const parentOptions = tickets.filter(t => t.id !== ticket.id && !blocked.has(t.id) && levelOf(t) < wt.level)
+  const parentOptions = tickets.filter(t => t.board_id === ticket.board_id && t.id !== ticket.id && !blocked.has(t.id) && levelOf(t) < wt.level)
     .sort((a, b) => levelOf(a) - levelOf(b) || a.title.localeCompare(b.title))
   const statusName = id => statuses.find(s => s.id === id)?.name || ''
 
@@ -298,6 +298,20 @@ export default function TicketModal({ ticket, tickets, links = [], descTemplates
           </div>
 
           <aside className="side-col">
+            {boards.length > 1 && <label className="field">
+              <span>Board</span>
+              <select value={ticket.board_id || ''} onChange={async e => {
+                const to = boards.find(b => b.id === e.target.value)
+                const kids = descendants(ticket.id, tickets).size
+                const msg = `Move ${ticketKey(ticket)}${kids ? ` and its ${kids} child item${kids > 1 ? 's' : ''}` : ''} to "${to.name}"?\n\n` +
+                  `It will get a new ${to.key_prefix} key (the old key ${ticketKey(ticket)} still finds it in search).` +
+                  (ticket.parent_id ? `\nIt will be removed from its current parent.` : '')
+                if (!confirm(msg)) { e.target.value = ticket.board_id; return }
+                await actions.moveTicket(ticket.id, to.id)
+              }}>
+                {boards.map(b => <option key={b.id} value={b.id}>{b.key_prefix} · {b.name}</option>)}
+              </select>
+            </label>}
             <label className="field">
               <span>Priority</span>
               <select value={priorityOf(ticket).value} onChange={e => upd({ priority: e.target.value })}
@@ -337,6 +351,7 @@ export default function TicketModal({ ticket, tickets, links = [], descTemplates
               </div>
             ))}
             <div className="meta muted small">
+              {(ticket.prev_keys || []).length > 0 && <div>Previously {ticket.prev_keys.join(', ')}</div>}
               <div>Created {new Date(ticket.created_at).toLocaleString()}</div>
               {ticket.updated_at && <div>Updated {new Date(ticket.updated_at).toLocaleString()}</div>}
             </div>

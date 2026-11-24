@@ -20,10 +20,11 @@ function saveDb(db) { try { localStorage.setItem(LS, JSON.stringify(db)) } catch
 const DEFAULTS = {
   statuses: { color: '#6b778c', position: 0 },
   fields: { options: [], show_on_card: false, position: 0 },
-  tickets: { description: '', position: 0, custom: {}, checklists: [], work_type: 'project', parent_id: null, priority: 'low' },
+  tickets: { description: '', position: 0, custom: {}, checklists: [], work_type: 'project', parent_id: null, priority: 'low', prev_keys: [] },
   settings: { key_prefix: 'PRJ' },
   ticket_links: { link_type: 'relates' },
   description_templates: { body: '', work_type: null },
+  boards: { position: 0, api_enabled: false },
   comments: {},
   checklist_templates: { items: [], auto_apply: false },
 }
@@ -37,8 +38,10 @@ const local = {
       const row = { ...DEFAULTS[table], id: uid(), created_at: now, ...r }
       if (table === 'tickets') {
         row.updated_at = now
-        if (row.number == null) row.number = Math.max(0, ...db.tickets.map(t => t.number || 0)) + 1
-        if (!row.key) row.key = ((db.settings || [])[0]?.key_prefix || 'PRJ') + '-' + row.number
+        const same = db.tickets.filter(t => (t.board_id || null) === (row.board_id || null))
+        if (row.number == null) row.number = Math.max(0, ...same.map(t => t.number || 0)) + 1
+        const board = (db.boards || []).find(b => b.id === row.board_id)
+        if (!row.key) row.key = (board?.key_prefix || (db.settings || [])[0]?.key_prefix || 'PRJ') + '-' + row.number
       }
       db[table].push(row); return row
     })
@@ -60,6 +63,7 @@ const local = {
       db.ticket_links = (db.ticket_links || []).filter(l => l.from_id !== id && l.to_id !== id)
     }
     if (table === 'statuses') (db.tickets || []).forEach(t => { if (t.status_id === id) t.status_id = null })
+    if (table === 'boards') db.statuses = (db.statuses || []).filter(s => s.board_id !== id)
     saveDb(db)
   },
 }

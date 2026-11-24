@@ -1,6 +1,7 @@
 // Read-only API for other apps: GET /api/portfolio
 // Auth: header "Authorization: Bearer <PORTFOLIO_API_TOKEN>" (or "x-api-key: <token>", or ?token=<token>)
-// Optional filters: ?key=POC-71  ?status=In Progress  ?work_type=project|workstream|subtask
+// Only boards ticked "Shared with API" in Settings > Boards are ever returned.
+// Optional filters: ?board=POC (board key or name)  ?key=POC-71  ?status=In Progress  ?work_type=project|workstream|subtask
 //                   ?updated_since=2026-11-01  ?include=tickets,board (default both)
 //
 // Vercel environment variables needed (NOT prefixed with VITE_, so they stay on the server):
@@ -51,17 +52,31 @@ export default async function handler(req, res) {
 
   try {
     const include = String(q.include || 'tickets,board').split(',')
-    const [statuses, fields, templates, settings] = await Promise.all([
+    const allBoards = await fetchAll(SB_URL, SB_KEY, 'boards', '&order=position').catch(() => null)
+    // boards shared with the API (older databases without boards: everything counts as one board)
+    let shared = allBoards ? allBoards.filter(b => b.api_enabled) : null
+    if (shared && q.board) {
+      const want = String(q.board).toLowerCase()
+      shared = shared.filter(b => b.key_prefix.toLowerCase() === want || b.name.toLowerCase() === want || b.id === q.board)
+    }
+    if (shared && shared.length === 0) {
+      return res.status(404).json({ error: q.board ? `No shared board matches "${q.board}". Tick "Shared with API" for it in Settings > Boards.` : 'No boards are shared with the API. Tick "Shared with API" in Settings > Boards.' })
+    }
+    const sharedIds = shared ? new Set(shared.map(b => b.id)) : null
+    const inShared = row => !sharedIds || sharedIds.has(row.board_id)
+    const [statusesAll, fields, templates, settings] = await Promise.all([
       fetchAll(SB_URL, SB_KEY, 'statuses', '&order=position'),
       fetchAll(SB_URL, SB_KEY, 'fields', '&order=position'),
       include.includes('board') ? fetchAll(SB_URL, SB_KEY, 'checklist_templates') : [],
       fetchAll(SB_URL, SB_KEY, 'settings').catch(() => []),
     ])
-    const body = { generated_at: new Date().toISOString(), key_prefix: settings[0]?.key_prefix || 'PRJ' }
+    const statuses = statusesAll.filter(inShared)
+    const body = { generated_at: new Date().toISOString(), key_prefix: shared?.[0]?.key_prefix || settings[0]?.key_prefix || 'PRJ' }
+    if (shared) body.boards = shared.map(b => ({ id: b.id, name: b.name, key: b.key_prefix }))
 
     if (include.includes('board')) {
       body.board = {
-        statuses: statuses.map(s => ({ id: s.id, name: s.name, color: s.color, position: s.position })),
+        statuses: statuses.map(s => ({ id: s.id, board: shared?.find(b => b.id === s.board_id)?.key_prefix, name: s.name, color: s.color, position: s.position })),
         work_types: Object.entries(WORK_TYPES).map(([value, label], level) => ({ value, label, level })),
         fields: fields.map(f => ({ id: f.id, name: f.name, type: f.type, options: f.options, show_on_card: f.show_on_card })),
         checklist_templates: templates.map(t => ({ id: t.id, name: t.name, items: t.items, auto_apply: t.auto_apply })),
@@ -69,10 +84,10 @@ export default async function handler(req, res) {
     }
 
     if (include.includes('tickets')) {
-      let tickets = await fetchAll(SB_URL, SB_KEY, 'tickets', '&order=number')
+      let tickets = (await fetchAll(SB_URL, SB_KEY, 'tickets', '&order=number')).filter(inShared)
       const statusName = Object.fromEntries(statuses.map(s => [s.id, s.name]))
       const byId = Object.fromEntries(tickets.map(t => [t.id, t]))
-      if (q.key) tickets = tickets.filter(t => (t.key || '').toUpperCase() === String(q.key).toUpperCase())
+      if (q.key) { const k = String(q.key).toUpperCase(); tickets = tickets.filter(t => (t.key || '').toUpperCase() === k || (t.prev_keys || []).includes(k)) }
       if (q.status) tickets = tickets.filter(t => (statusName[t.status_id] || '').toLowerCase() === String(q.status).toLowerCase())
       if (q.work_type) tickets = tickets.filter(t => (t.work_type || 'project') === q.work_type)
       if (q.priority) tickets = tickets.filter(t => (t.priority || 'low') === String(q.priority).toLowerCase())
@@ -84,6 +99,8 @@ export default async function handler(req, res) {
         return {
           id: t.id,
           key: t.key || `${body.key_prefix}-${t.number}`,
+          board: shared?.find(b => b.id === t.board_id)?.key_prefix,
+          previous_keys: t.prev_keys || [],
           title: t.title,
           status: statusName[t.status_id] || null,
           work_type: t.work_type || 'project',
